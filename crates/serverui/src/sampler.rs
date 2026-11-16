@@ -1,4 +1,6 @@
+use crate::service_worker::ServiceWorker;
 use serverui_core::domain::{ProviderError, Sample, SystemProvider};
+use serverui_core::services::{ServiceProvider, ServiceRequest, ServiceResult};
 use std::{
     io,
     panic::{AssertUnwindSafe, catch_unwind},
@@ -14,9 +16,21 @@ use std::{
 pub trait SampleSource {
     fn request(&mut self) -> Result<bool, ProviderError>;
     fn take(&mut self) -> Option<Sample>;
+    fn service_request(&mut self, _: ServiceRequest) -> Result<bool, ProviderError> {
+        Err(ProviderError::Unavailable(
+            "Servicios no disponibles".into(),
+        ))
+    }
+    fn service_take(&mut self) -> Option<(ServiceRequest, ServiceResult)> {
+        None
+    }
 }
 
+pub type ServiceFactory = Box<dyn FnOnce() -> Box<dyn ServiceProvider> + Send>;
+
 pub struct Sampler {
+    pub service_factory: Option<ServiceFactory>,
+    services: Option<ServiceWorker>,
     requests: SyncSender<()>,
     results: Receiver<Sample>,
     cancelled: Arc<AtomicBool>,
@@ -69,6 +83,8 @@ impl Sampler {
                 }
             })?;
         Ok(Self {
+            services: None,
+            service_factory: None,
             requests,
             results,
             cancelled,
@@ -78,6 +94,19 @@ impl Sampler {
     }
 }
 impl SampleSource for Sampler {
+    fn service_request(&mut self, request: ServiceRequest) -> Result<bool, ProviderError> {
+        if self.services.is_none()
+            && let Some(factory) = self.service_factory.take()
+        {
+            self.services = Some(ServiceWorker::spawn(factory).map_err(|_| {
+                ProviderError::Unavailable("No se pudo iniciar worker de servicios".into())
+            })?);
+        }
+        self.services.as_mut().ok_or_else(stopped)?.request(request)
+    }
+    fn service_take(&mut self) -> Option<(ServiceRequest, ServiceResult)> {
+        self.services.as_mut()?.take()
+    }
     fn request(&mut self) -> Result<bool, ProviderError> {
         if self.pending {
             return Ok(false);
@@ -118,6 +147,27 @@ impl Drop for Sampler {
 mod tests {
     use super::*;
     use std::sync::mpsc;
+    #[test]
+    fn service_thread_and_provider_are_created_only_on_first_service_request() -> io::Result<()> {
+        use serverui_core::services::ServiceProvider;
+        let (created, receiver) = mpsc::channel();
+        let mut sampler =
+            Sampler::spawn(|| Ok(Box::new(serverui_providers::MockProvider::default())))?;
+        sampler.service_factory = Some(Box::new(move || {
+            let _ = created.send(());
+            Box::new(serverui_providers::MockServices::new(
+                serverui_providers::Scenario::Normal,
+            )) as Box<dyn ServiceProvider>
+        }));
+        assert!(sampler.services.is_none());
+        assert_eq!(receiver.try_recv(), Err(mpsc::TryRecvError::Empty));
+        sampler
+            .service_request(ServiceRequest::List)
+            .map_err(io::Error::other)?;
+        receiver.recv().map_err(io::Error::other)?;
+        assert!(sampler.services.is_some());
+        Ok(())
+    }
     struct Blocked {
         entered: mpsc::Sender<()>,
         release: Receiver<()>,

@@ -1,9 +1,10 @@
 # ServerUI
 
 Administración visual de Ubuntu Server desde la terminal, construida en Rust.
-**Stage 1 / v0.2.0: Dashboard y procesos de solo lectura.**
-LinuxProvider lee CPU, RAM, swap, discos, uptime y procesos visibles. La TUI no
-modifica el sistema ni ofrece operaciones privilegiadas.
+**Stage 2 / v0.3.0-dev en desarrollo; Stage 1 publicado como v0.2.0.**
+Dashboard y procesos conservan solo lectura. Servicios añade consultas de systemd,
+logs y acciones con confirmación explícita; alcance y aceptación documentados.
+La TUI funciona con los permisos del usuario y nunca solicita sudo.
 
 La [release v0.2.0](https://github.com/Charmandiox9/ServerUI/releases/tag/v0.2.0)
 incluye binarios x86_64 Linux GNU y Windows MSVC, más checksums SHA-256. Linux
@@ -71,13 +72,50 @@ También se respeta NO_COLOR no vacío. Los estados se identifican con texto.
 El orden recorre CPU, RAM, PID y nombre; los empates se resuelven por identidad
 para evitar saltos. La selección se conserva al actualizar y reordenar. Si el
 proceso inspeccionado desaparece o cambia su inicio con el mismo PID, se cierra
-el detalle con aviso. La identidad usa la resolución en segundos de sysinfo;
+el detalle con aviso. La identidad pública conserva resolución en segundos;
 no se ofrecen acciones basadas en esa identidad.
 
-La ayuda captura navegación pero permite refrescos y salida. Servicios sigue
-siendo un placeholder de Stage 2. Ajustes muestra opciones de esta ejecución,
+La ayuda captura navegación pero permite refrescos y salida. Ajustes muestra opciones de esta ejecución,
 sin editor persistente. Se admiten 80×24, modo compacto 40×12 y aviso en tamaños
 menores sin perder salida por teclado. No se requieren ratón, truecolor ni iconos.
+
+## Servicios, logs y acciones rápidas (Stage 2)
+
+En Servicios, la primera entrada consulta las unidades `.service` cargadas en el
+systemd del sistema. No enumera todos los archivos instalados ni plantillas sin
+instancia. `/` filtra por unidad, j/k y Home/End seleccionan, Enter abre las últimas
+80 líneas visibles del journal; j/k desplaza y Escape vuelve. `r` actualiza la
+lista o la captura de logs. No hay seguimiento continuo ni consultas de servicios
+en cada tick de métricas. Nombres escapados o patrones no admitidos se omiten con
+aviso; máximo 2048 unidades y salida de comando máxima de 256 KiB.
+
+| Tecla en Servicios | Acción propuesta |
+| --- | --- |
+| a | Iniciar |
+| d | Detener |
+| R | Reiniciar |
+| e | Habilitar al arranque; no inicia el servicio |
+| y en confirmación | Ejecutar una vez la operación y unidad mostradas |
+| n / Escape en confirmación | Cancelar sin ejecutar |
+| h | Historial volátil de los últimos 16 resultados |
+
+Cada acción identifica la unidad exacta y advierte que puede afectar dependencias
+y cortar SSH. j/k permite revisar nombres largos en la confirmación. La demo
+simula todas las acciones sin ejecutar comandos ni leer el host. En Linux real
+se usan `/usr/bin/systemctl` y `/usr/bin/journalctl`, argumentos separados, sin
+shell, stdin, pager ni agente de autenticación. Un permiso insuficiente o systemd
+no disponible produce error legible. No se modifica polkit ni se eleva la TUI.
+
+Los comandos se ejecutan en un worker independiente, creado solo al abrir
+Servicios, con una petición en vuelo y plazo de 5 s. Un timeout mata el cliente,
+pero no revierte ni garantiza cancelar el job ya recibido por systemd: el
+resultado puede ser incierto. Comprobar con `r` antes de decidir un reintento.
+Una salida correcta tampoco garantiza la salud posterior del servicio. El journal
+puede estar vacío o incompleto por permisos; no se infiere acceso total.
+
+La TUI añade barras de CPU/RAM/swap en 80×24, tabla de montajes y selección
+invertida visible sin color. Conserva modo compacto, ASCII y colores ANSI
+opcionales; no añade animaciones ni aumenta la frecuencia de renderizado.
 
 ## Interpretar las métricas
 
@@ -87,6 +125,9 @@ menores sin perder salida por teclado. No se requieren ratón, truecolor ni icon
   definición total menos disponible de sysinfo, verificada frente a /proc/meminfo.
 - La tabla muestra RSS, no memoria virtual. El detalle distingue ambas y muestra
   PID, padre, nombre, estado, CPU, inicio Unix y tiempo activo.
+- Procesos Linux usa una lectura acotada de `/proc/PID/stat` por proceso; CPU se
+  calcula con ticks y tiempo monotónico. RSS de proc es aproximada. sysinfo sigue
+  proporcionando CPU global, RAM/swap y discos. No se leen argumentos ni entorno.
 - Discos se muestran por montaje como espacio disponible para el usuario frente
   a capacidad total. No se suman montajes que puedan compartir dispositivo.
   Volúmenes sin datos se marcan no disponibles. sysinfo excluye por defecto
@@ -99,15 +140,16 @@ menores sin perder salida por teclado. No se requieren ratón, truecolor ni icon
 
 No se leen argumentos, entorno, rutas de ejecutables, GPU ni tareas/hilos por
 proceso. Los nombres, montajes y errores se neutralizan antes de renderizar.
-No hay kill, renice, systemd, APT, administración de red/discos ni escritura de
-configuración o historial.
+No hay kill, renice, APT ni administración de red/discos. La configuración de
+ServerUI y el historial no se escriben a disco. Las acciones sobre servicios son
+las únicas mutaciones de Stage 2 y requieren confirmación.
 
 ## Arquitectura
 
 | Crate | Responsabilidad |
 | --- | --- |
 | serverui-core | Modelos, SystemProvider, estado y transiciones puras |
-| serverui-providers | MockProvider; LinuxProvider cfg Linux con sysinfo mínimo |
+| serverui-providers | MockProvider/MockServices; LinuxProvider y LinuxServices cfg Linux |
 | serverui-tui | Teclas, render y ciclo de vida del terminal |
 | serverui | CLI, composición, worker de recolección y lector de teclado |
 
@@ -140,6 +182,7 @@ operaciones de fixture no forman parte de la aplicación. Windows verifica demo.
 ```sh
 cargo build --locked -p serverui-tui --example terminal_probe
 python3 scripts/pty_smoke.py target/release/serverui target/debug/examples/terminal_probe
+python3 scripts/service_smoke.py target/release/serverui
 python3 scripts/benchmark_demo.py target/release/serverui --seconds 60
 python3 scripts/benchmark_demo.py target/release/serverui --real --seconds 120
 ```
@@ -174,4 +217,14 @@ panic=abort, fallo del emulador o desconexión abrupta no garantizan cleanup; si
 fuera necesario usar stty sane y reset en el shell Linux.
 
 Convenciones en AGENTS.md; plan en docs/STAGE_1_PLAN.md, decisión en ADR 0002 y
-resultados efectivos en docs/ACCEPTANCE_STAGE_1.md. Stage 2 no está autorizado.
+resultados históricos en docs/ACCEPTANCE_STAGE_1.md. Stage 2 fue autorizado el
+16 de noviembre de 2026; alcance y verificación en docs/STAGE_2_PLAN.md, ADR 0003
+y docs/ACCEPTANCE_STAGE_2.md. No se ha publicado v0.3.0.
+
+El smoke exploratorio en la laptop física pasó para demo y funciones de lectura.
+El benchmark real inicial superó el umbral de CPU (3,98 % de un núcleo en 60 s).
+Tras optimizar la lectura de procesos obtuvo 0,90 % y 3,66 MB máximos de RSS al
+mismo refresco de 1000 ms; ayuda 0,59 ms. Son ventanas cortas en ese equipo, no
+garantías para cualquier host. Cifras y límites en docs/ACCEPTANCE_STAGE_2.md.
+El usuario sustituyó la VM por una prueba controlada por SSH; el procedimiento
+de unidades desechables está en docs/SERVICE_ACCEPTANCE_SSH.md.

@@ -85,8 +85,11 @@ fn run_loop(
         let before = app.clone();
         let now = events.now();
         if now >= deadline {
-            apply(&mut app, Action::Refresh, source);
+            request_snapshot(&mut app, source);
             deadline = now.saturating_add(interval);
+        }
+        if let Some((request, reply)) = source.service_take() {
+            app.services.receive(request, reply);
         }
         if let Some(reply) = source.take() {
             app.receive(reply);
@@ -111,14 +114,26 @@ fn run_loop(
 }
 fn apply(app: &mut App, action: Action, source: &mut impl SampleSource) -> bool {
     let before = app.clone();
-    if let Some(Effect::QuerySnapshot) = app.update(action) {
-        match source.request() {
-            Ok(true) => app.refreshing = true,
+    match app.update(action) {
+        Some(Effect::QuerySnapshot) => request_snapshot(app, source),
+        Some(Effect::Service(request)) => match source.service_request(request.clone()) {
+            Ok(true) => {
+                app.services.busy = true;
+                app.services.message = None;
+            }
             Ok(false) => {}
-            Err(error) => app.receive(Err(error)),
-        }
+            Err(error) => app.services.receive(request, Err(error)),
+        },
+        None => {}
     }
     *app != before
+}
+fn request_snapshot(app: &mut App, source: &mut impl SampleSource) {
+    match source.request() {
+        Ok(true) => app.refreshing = true,
+        Ok(false) => {}
+        Err(error) => app.receive(Err(error)),
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -182,6 +197,67 @@ mod tests {
     }
     fn key(code: KeyCode) -> Option<Event> {
         Some(Event::Key(KeyEvent::new(code, KeyModifiers::NONE)))
+    }
+    #[test]
+    fn service_mutations_are_once_only_and_metrics_continue() -> io::Result<()> {
+        use serverui_core::services::*;
+        struct ServicesSource {
+            metrics: Source,
+            provider: serverui_providers::MockServices,
+            reply: Option<(ServiceRequest, ServiceResult)>,
+            mutations: usize,
+        }
+        impl SampleSource for ServicesSource {
+            fn request(&mut self) -> Result<bool, ProviderError> {
+                self.metrics.request()
+            }
+            fn take(&mut self) -> Option<Sample> {
+                self.metrics.take()
+            }
+            fn service_request(&mut self, request: ServiceRequest) -> Result<bool, ProviderError> {
+                if self.reply.is_some() {
+                    return Ok(false);
+                }
+                self.mutations += usize::from(matches!(request, ServiceRequest::Execute(..)));
+                let result = self.provider.perform(&request);
+                self.reply = Some((request, result));
+                Ok(true)
+            }
+            fn service_take(&mut self) -> Option<(ServiceRequest, ServiceResult)> {
+                self.reply.take()
+            }
+        }
+        let mut source = ServicesSource {
+            metrics: Source::new(Scenario::Normal),
+            provider: serverui_providers::MockServices::new(Scenario::Normal),
+            reply: None,
+            mutations: 0,
+        };
+        let mut events = Events {
+            now: Duration::ZERO,
+            queue: VecDeque::from([
+                (Duration::ZERO, key(KeyCode::Char('3'))),
+                (Duration::ZERO, key(KeyCode::Char('d'))),
+                (Duration::ZERO, key(KeyCode::Esc)),
+                (Duration::ZERO, key(KeyCode::Char('y'))),
+                (Duration::ZERO, key(KeyCode::Char('a'))),
+                (Duration::ZERO, key(KeyCode::Char('y'))),
+                (Duration::ZERO, key(KeyCode::Char('y'))),
+                (Duration::from_millis(210), key(KeyCode::Char('q'))),
+            ]),
+        };
+        let app = run_loop(
+            &mut source,
+            &mut events,
+            Duration::from_millis(100),
+            ProviderMode::Demo,
+            |_| Ok(()),
+        )?;
+        assert_eq!(source.mutations, 1);
+        assert_eq!(app.services.history.len(), 1);
+        assert_eq!(source.metrics.requests, 3);
+        assert!(app.quit);
+        Ok(())
     }
     #[test]
     fn tick_resize_navigation_and_idle_timeout() -> io::Result<()> {

@@ -42,7 +42,7 @@ fn mib(value: u64) -> String {
 }
 fn border<'a>(title: &'a str, options: DisplayOptions) -> Block<'a> {
     let block = Block::default()
-        .title(title)
+        .title(Line::from(title).style(Style::default().add_modifier(Modifier::BOLD)))
         .borders(Borders::ALL)
         .border_type(if options.ascii {
             BorderType::Plain
@@ -76,6 +76,8 @@ fn status(app: &App, options: DisplayOptions) -> String {
             "{}{}",
             if app.mode == ProviderMode::Demo {
                 "Datos simulados"
+            } else if app.section == Section::Services {
+                "Servicios: acciones con confirmacion"
             } else {
                 "Datos Linux / solo lectura"
             },
@@ -115,7 +117,11 @@ pub fn draw(frame: &mut Frame, app: &App, options: DisplayOptions) {
         Paragraph::new(format!(
             "ServerUI / v{} / {}",
             env!("CARGO_PKG_VERSION"),
-            app.mode.label()
+            if app.section == Section::Services && app.mode == ProviderMode::Linux {
+                "LINUX / SERVICIOS"
+            } else {
+                app.mode.label()
+            }
         ))
         .style(accent.add_modifier(Modifier::BOLD)),
         sections[0],
@@ -149,7 +155,17 @@ pub fn draw(frame: &mut Frame, app: &App, options: DisplayOptions) {
         })
         .collect();
     frame.render_widget(Paragraph::new(Line::from(nav)), sections[1]);
-    frame.render_widget(Paragraph::new(status(app, options)), sections[2]);
+    let state_style = if options.no_color {
+        Style::default()
+    } else if matches!(app.status, DataStatus::Error(_)) {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default()
+    };
+    frame.render_widget(
+        Paragraph::new(status(app, options)).style(state_style),
+        sections[2],
+    );
     let title = if app.help {
         " Ayuda "
     } else if app.inspecting.is_some() {
@@ -162,14 +178,25 @@ pub fn draw(frame: &mut Frame, app: &App, options: DisplayOptions) {
     frame.render_widget(block, sections[3]);
     if app.help {
         frame.render_widget(
-            Paragraph::new(vec![
-                Line::from("Tab/Shift+Tab/flechas: seccion; 1-4"),
-                Line::from("Arriba/abajo: fila/disco; Enter: detalle"),
-                Line::from("/: filtro | s: orden | S: invertir"),
-                Line::from("r: refrescar | Esc: volver/cerrar"),
-                Line::from("?: ayuda | q/Ctrl+C: salir"),
-                Line::from("Filtro: Enter/Esc fin; Ctrl+U limpia"),
-            ]),
+            Paragraph::new(if app.section == Section::Services {
+                vec![
+                    Line::from("Tab/Shift+Tab: seccion | /: filtro"),
+                    Line::from("j/k: fila/log | Enter: logs | Esc: volver"),
+                    Line::from("a: iniciar | d: parar | R: reiniciar"),
+                    Line::from("e: habilitar al arranque (no inicia)"),
+                    Line::from("y: confirmar | n/Esc: cancelar"),
+                    Line::from("h: historial | r: refrescar | q: salir"),
+                ]
+            } else {
+                vec![
+                    Line::from("Tab/Shift+Tab/flechas: seccion; 1-4"),
+                    Line::from("Arriba/abajo: fila/disco; Enter: detalle"),
+                    Line::from("/: filtro | s: orden | S: invertir"),
+                    Line::from("r: refrescar | Esc: volver/cerrar"),
+                    Line::from("?: ayuda | q/Ctrl+C: salir"),
+                    Line::from("Filtro: Enter/Esc fin; Ctrl+U limpia"),
+                ]
+            }),
             inner,
         );
     } else if let Some(process) = app.inspected_process() {
@@ -206,6 +233,10 @@ pub fn draw(frame: &mut Frame, app: &App, options: DisplayOptions) {
             ]),
             inner,
         );
+    } else if app.section == Section::Services {
+        services(frame, inner, app, options, accent);
+    } else if app.section == Section::Dashboard {
+        dashboard(frame, inner, app, options, accent);
     } else if app.section == Section::Processes {
         processes(frame, inner, app, options, accent);
     } else {
@@ -214,16 +245,29 @@ pub fn draw(frame: &mut Frame, app: &App, options: DisplayOptions) {
             inner,
         );
     }
-    let footer = if app.editing_filter {
+    let footer = if app.section == Section::Services && app.services.confirmation.is_some() {
+        "y: confirmar | n/Esc: cancelar | q: salir"
+    } else if app.section == Section::Services && app.services.editing {
+        "Filtro | Enter/Esc: fin | Ctrl+U: limpiar"
+    } else if app.section == Section::Services
+        && (app.services.logs.is_some() || app.services.show_history)
+    {
+        "j/k: logs | r: actualizar | Esc: volver"
+    } else if app.section == Section::Services {
+        "a:iniciar d:parar R:reiniciar e:habilitar"
+    } else if app.editing_filter {
         "Escribe filtro | Enter/Esc: fin | ^C:salir"
     } else if app.inspecting.is_some() {
         "Esc: cerrar detalle | q/Ctrl+C: salir"
     } else if app.section == Section::Processes {
         "/: filtro | s: orden | Enter: detalle | q"
     } else {
-        "Arriba/abajo: discos | ?: ayuda | q:salir"
+        "j/k: discos | ?: ayuda | q: salir"
     };
-    frame.render_widget(Paragraph::new(footer), sections[4]);
+    frame.render_widget(
+        Paragraph::new(footer).style(Style::default().add_modifier(Modifier::BOLD)),
+        sections[4],
+    );
 }
 
 fn processes(frame: &mut Frame, area: Rect, app: &App, options: DisplayOptions, accent: Style) {
@@ -311,18 +355,298 @@ fn processes(frame: &mut Frame, area: Rect, app: &App, options: DisplayOptions, 
     let table = Table::new(data, widths)
         .header(Row::new(header).style(Style::default().add_modifier(Modifier::BOLD)))
         .column_spacing(1)
-        .row_highlight_style(accent.add_modifier(Modifier::BOLD))
+        .row_highlight_style(accent.add_modifier(Modifier::BOLD | Modifier::REVERSED))
         .highlight_symbol("> ");
     let mut state = TableState::default().with_selected(Some(selected - start));
     frame.render_stateful_widget(table, parts[1], &mut state);
 }
 
+fn dashboard(frame: &mut Frame, area: Rect, app: &App, options: DisplayOptions, accent: Style) {
+    if area.width < 76 || area.height < 12 || app.snapshot.is_none() {
+        frame.render_widget(
+            Paragraph::new(content(app, options)).wrap(Wrap { trim: false }),
+            area,
+        );
+        return;
+    }
+    let Some(snapshot) = &app.snapshot else {
+        return;
+    };
+    let parts = Layout::vertical([
+        Constraint::Length(5),
+        Constraint::Length(1),
+        Constraint::Min(1),
+    ])
+    .split(area);
+    let metrics = Layout::horizontal([Constraint::Length(38), Constraint::Min(1)]).split(parts[0]);
+    let texts = vec![
+        Line::from(format!(
+            "CPU: {} ({} CPU)",
+            percent(snapshot.cpu_usage),
+            snapshot.cpu_count
+        )),
+        Line::from(format!(
+            "RAM: {} / {} MiB",
+            mib(snapshot.memory_used),
+            mib(snapshot.memory_total)
+        )),
+        Line::from(format!(
+            "Swap: {} / {} MiB",
+            mib(snapshot.swap_used),
+            mib(snapshot.swap_total)
+        )),
+        Line::from(format!("Uptime: {} s", snapshot.uptime_seconds)),
+        Line::from(format!("Procesos visibles: {}", snapshot.process_count)),
+    ];
+    frame.render_widget(Paragraph::new(texts), metrics[0]);
+    let ratio = |used: u64, total: u64| {
+        (total > 0).then(|| ((u128::from(used) * 10000 / u128::from(total)).min(10000)) as u32)
+    };
+    let bars = [
+        snapshot.cpu_usage,
+        ratio(snapshot.memory_used, snapshot.memory_total),
+        ratio(snapshot.swap_used, snapshot.swap_total),
+    ]
+    .into_iter()
+    .map(|value| {
+        let width = usize::from(metrics[1].width.saturating_sub(9)).min(32);
+        let filled = value.map_or(0, |v| (v.min(10000) as usize * width / 10000).min(width));
+        let label = if value.is_none() {
+            "--".into()
+        } else {
+            percent(value)
+        };
+        Line::from(vec![
+            Span::raw("["),
+            Span::styled("#".repeat(filled), accent),
+            Span::raw("-".repeat(width - filled)),
+            Span::raw(format!("] {label}")),
+        ])
+    })
+    .collect::<Vec<_>>();
+    frame.render_widget(Paragraph::new(bars), metrics[1]);
+    frame.render_widget(
+        Paragraph::new(format!(
+            "MONTAJES  {}  |  j/k: desplazar",
+            snapshot.disks.len()
+        ))
+        .style(accent.add_modifier(Modifier::BOLD)),
+        parts[1],
+    );
+    let rows = snapshot
+        .disks
+        .iter()
+        .skip(app.dashboard_scroll)
+        .take(usize::from(parts[2].height.saturating_sub(2)))
+        .map(|disk| {
+            let (free, total) = disk.space.map_or(("--".into(), "--".into()), |space| {
+                (mib(space.available_bytes), mib(space.total_bytes))
+            });
+            Row::new(vec![safe_text(&disk.mount, options.ascii), free, total])
+        });
+    let warning = snapshot
+        .disk_warning
+        .as_deref()
+        .map(|w| safe_text(w, options.ascii))
+        .unwrap_or_else(|| {
+            if snapshot.disks.is_empty() {
+                "Sin montajes visibles".into()
+            } else {
+                "Capacidad por montaje; no se suman volumenes".into()
+            }
+        });
+    let table_area = Layout::vertical([Constraint::Min(1), Constraint::Length(1)]).split(parts[2]);
+    frame.render_widget(
+        Table::new(
+            rows,
+            [
+                Constraint::Min(18),
+                Constraint::Length(18),
+                Constraint::Length(18),
+            ],
+        )
+        .column_spacing(2)
+        .header(
+            Row::new(["Montaje", "Disponible MiB", "Total MiB"])
+                .style(Style::default().add_modifier(Modifier::BOLD)),
+        ),
+        table_area[0],
+    );
+    frame.render_widget(Paragraph::new(warning), table_area[1]);
+}
+
+fn services(frame: &mut Frame, area: Rect, app: &App, options: DisplayOptions, accent: Style) {
+    let service = &app.services;
+    if let Some((unit, operation)) = &service.confirmation {
+        let parts = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(2),
+        ])
+        .split(area);
+        frame.render_widget(
+            Paragraph::new(format!("{}?", operation.label()))
+                .style(accent.add_modifier(Modifier::BOLD)),
+            parts[0],
+        );
+        let width = usize::from(parts[1].width.max(1));
+        let name = safe_text(unit.as_str(), options.ascii);
+        let max_scroll = name
+            .len()
+            .div_ceil(width)
+            .saturating_sub(usize::from(parts[1].height));
+        let scroll = service.log_scroll.min(max_scroll).min(u16::MAX as usize) as u16;
+        frame.render_widget(
+            Paragraph::new(name)
+                .wrap(Wrap { trim: false })
+                .scroll((scroll, 0)),
+            parts[1],
+        );
+        frame.render_widget(
+            Paragraph::new(vec![
+                Line::from(if app.mode == ProviderMode::Demo {
+                    "DEMO: accion simulada"
+                } else {
+                    "Puede cortar servicios/SSH; sin rollback"
+                }),
+                Line::from("j/k: revisar unidad | y: confirmar"),
+            ]),
+            parts[2],
+        );
+        return;
+    }
+    let parts = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Min(1),
+        Constraint::Length(1),
+    ])
+    .split(area);
+    if service.show_history {
+        frame.render_widget(
+            Paragraph::new("HISTORIAL DE ESTA SESION").style(accent.add_modifier(Modifier::BOLD)),
+            parts[0],
+        );
+        let lines = service
+            .history
+            .iter()
+            .rev()
+            .skip(service.log_scroll)
+            .take(usize::from(parts[1].height))
+            .map(|line| Line::from(safe_text(line, options.ascii)))
+            .collect::<Vec<_>>();
+        frame.render_widget(
+            Paragraph::new(if lines.is_empty() {
+                vec![Line::from("Sin acciones ejecutadas")]
+            } else {
+                lines
+            }),
+            parts[1],
+        );
+    } else if let Some((unit, lines)) = &service.logs {
+        frame.render_widget(
+            Paragraph::new(safe_text(unit.as_str(), options.ascii))
+                .style(accent.add_modifier(Modifier::BOLD)),
+            parts[0],
+        );
+        let rows = lines
+            .iter()
+            .skip(service.log_scroll)
+            .take(usize::from(parts[1].height))
+            .map(|line| Line::from(safe_text(line, options.ascii)))
+            .collect::<Vec<_>>();
+        frame.render_widget(
+            Paragraph::new(if rows.is_empty() {
+                vec![Line::from("Sin entradas visibles; revisar permisos")]
+            } else {
+                rows
+            }),
+            parts[1],
+        );
+    } else {
+        frame.render_widget(
+            Paragraph::new(format!(
+                "/{}{} | Enter: logs",
+                safe_text(&service.filter, options.ascii),
+                if service.editing { "_" } else { "" }
+            )),
+            parts[0],
+        );
+        let rows = service.visible();
+        if rows.is_empty() {
+            frame.render_widget(
+                Paragraph::new(if service.busy {
+                    "Consultando servicios..."
+                } else if service.loaded {
+                    "Sin servicios que coincidan"
+                } else {
+                    "r: consultar servicios systemd"
+                }),
+                parts[1],
+            );
+        } else {
+            let selected = rows
+                .iter()
+                .position(|s| Some(&s.unit) == service.selected.as_ref())
+                .unwrap_or(0);
+            let capacity = usize::from(parts[1].height.saturating_sub(1).max(1));
+            let start = selected / capacity * capacity;
+            let wide = area.width >= 70;
+            let data = rows.iter().skip(start).take(capacity).map(|s| {
+                let mut cells = vec![
+                    safe_text(s.unit.as_str(), options.ascii),
+                    safe_text(&s.active, options.ascii),
+                ];
+                if wide {
+                    cells.push(safe_text(&s.sub, options.ascii));
+                    cells.push(safe_text(&s.description, options.ascii));
+                }
+                Row::new(cells)
+            });
+            let widths = if wide {
+                vec![
+                    Constraint::Percentage(36),
+                    Constraint::Length(12),
+                    Constraint::Length(12),
+                    Constraint::Min(8),
+                ]
+            } else {
+                vec![Constraint::Min(20), Constraint::Length(12)]
+            };
+            let header = if wide {
+                vec!["Servicio", "Estado", "Subestado", "Descripcion"]
+            } else {
+                vec!["Servicio", "Estado"]
+            };
+            let table = Table::new(data, widths)
+                .header(Row::new(header).style(Style::default().add_modifier(Modifier::BOLD)))
+                .column_spacing(1)
+                .highlight_symbol("> ")
+                .row_highlight_style(accent.add_modifier(Modifier::REVERSED | Modifier::BOLD));
+            frame.render_stateful_widget(
+                table,
+                parts[1],
+                &mut TableState::default().with_selected(Some(selected - start)),
+            );
+        }
+    }
+    let message = if service.busy {
+        "Consultando...; q: salir sin esperar".into()
+    } else if let Some(message) = &service.message {
+        safe_text(message, options.ascii)
+    } else if service.limited {
+        "Lista limitada; algunas unidades omitidas".into()
+    } else {
+        format!(
+            "{} cargados | /:filtro h:historial ?:ayuda",
+            service.units.len()
+        )
+    };
+    frame.render_widget(Paragraph::new(message), parts[2]);
+}
+
 fn content(app: &App, options: DisplayOptions) -> Vec<Line<'static>> {
     match app.section {
-        Section::Services => vec![
-            Line::from("Servicios: disponible en Stage 2."),
-            Line::from("Sin acceso a systemd ni privilegios."),
-        ],
+        Section::Services => Vec::new(),
         Section::Settings => vec![
             Line::from(format!("Proveedor: {}", app.mode.label())),
             Line::from(format!("Refresco: {} ms", options.refresh_ms)),
@@ -394,6 +718,48 @@ mod tests {
         domain::{DiskInfo, DiskSpace, ProcessId, ProcessInfo, ProviderError, Snapshot},
     };
     use std::convert::Infallible;
+    #[test]
+    fn service_table_logs_history_and_confirmation_fit_and_sanitize() -> Result<(), Infallible> {
+        use serverui_core::services::*;
+        let unit = UnitName::parse("fixture.service").unwrap_or_else(|e| panic!("{e}"));
+        let mut app = App {
+            section: Section::Services,
+            ..App::default()
+        };
+        app.services.receive(
+            ServiceRequest::List,
+            Ok(ServiceData::List {
+                units: vec![ServiceInfo {
+                    unit: unit.clone(),
+                    load: "loaded".into(),
+                    active: "failed".into(),
+                    sub: "failed".into(),
+                    description: "bad\x1b\u{202e}".into(),
+                }],
+                limited: false,
+            }),
+        );
+        for (w, h) in [(40, 12), (80, 24), (120, 30)] {
+            let output = screen(&app, w, h)?;
+            assert!(output.contains("fixture.service"));
+            assert!(output.contains("failed"));
+            assert!(!output.contains('\x1b'));
+            app.services.propose(ServiceOperation::Restart);
+            let output = screen(&app, w, h)?;
+            for expected in ["Reiniciar?", "fixture.service", "DEMO", "y: confirmar"] {
+                assert!(output.contains(expected), "{expected}");
+            }
+            app.services.confirmation = None;
+        }
+        app.services.receive(
+            ServiceRequest::Logs(unit),
+            Ok(ServiceData::Logs(vec!["bad\x1b[31m\u{202e}".into(); 80])),
+        );
+        assert!(!screen(&app, 40, 12)?.contains('\x1b'));
+        app.services.show_history = true;
+        assert!(screen(&app, 40, 12)?.contains("Sin acciones ejecutadas"));
+        Ok(())
+    }
     fn screen(app: &App, width: u16, height: u16) -> Result<String, Infallible> {
         let mut terminal = Terminal::new(TestBackend::new(width, height))?;
         terminal.draw(|f| {

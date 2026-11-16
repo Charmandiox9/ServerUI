@@ -1,5 +1,6 @@
 mod runner;
 mod sampler;
+mod service_worker;
 
 use std::{
     io::{self, IsTerminal},
@@ -23,7 +24,7 @@ enum DemoScenario {
 #[derive(Debug, Parser)]
 #[command(
     version,
-    about = "ServerUI: Dashboard y procesos Linux de solo lectura. --demo: datos simulados."
+    about = "ServerUI: metricas, procesos y servicios systemd. Acciones con confirmacion. --demo: simulacion."
 )]
 struct Args {
     /// Usar datos simulados sin consultar ni modificar el host
@@ -35,7 +36,7 @@ struct Args {
     /// Usar los colores predeterminados del terminal
     #[arg(long)]
     no_color: bool,
-    /// Intervalo entre muestras simuladas (100..60000 ms)
+    /// Intervalo entre muestras de metricas (100..60000 ms)
     #[arg(long, default_value_t = 1000, value_parser = clap::value_parser!(u64).range(100..=60000))]
     refresh_ms: u64,
     /// Escenario reproducible para revisar estados de la demo
@@ -83,6 +84,7 @@ fn start(args: Args) -> io::Result<()> {
     };
     terminal::install_panic_hook();
     let mut source = sampler::Sampler::spawn(move || make_provider(args.demo, scenario))?;
+    source.service_factory = Some(Box::new(move || make_services(args.demo, scenario)));
     terminal::run(|terminal| {
         runner::run(
             &mut source,
@@ -115,5 +117,22 @@ fn make_provider(
         Err(ProviderError::Unavailable(
             "El proveedor real requiere Linux".into(),
         ))
+    }
+}
+
+fn make_services(
+    demo: bool,
+    scenario: Scenario,
+) -> Box<dyn serverui_core::services::ServiceProvider> {
+    if demo {
+        return Box::new(serverui_providers::MockServices::new(scenario));
+    }
+    #[cfg(target_os = "linux")]
+    {
+        Box::new(serverui_providers::LinuxServices)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Box::new(serverui_providers::MockServices::new(Scenario::Empty))
     }
 }
