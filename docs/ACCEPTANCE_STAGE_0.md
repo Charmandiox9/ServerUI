@@ -2,10 +2,12 @@
 
 Fecha de validación: 16 de noviembre de 2026.
 
-Estado: Stage 0 validado localmente y preparado para v0.1.0. El usuario autorizó
-el commit inicial, commits en feat, PR y release el 16 de noviembre de 2026. La
-publicación se realiza después de que CI apruebe el PR y el commit integrado en
-main. Se mantiene exclusivamente el alcance de Stage 0.
+Estado: Stage 0 completado y v0.1.0 publicada el 16 de noviembre de 2026. PR #1
+integrado en 3a1f46764749b000c01b1a1e5920f8c7e8de8a32 y CI Linux/Windows aprobada
+antes de publicar. Se mantiene aquí la evidencia histórica.
+
+Release: https://github.com/Charmandiox9/ServerUI/releases/tag/v0.1.0
+CI: https://github.com/Charmandiox9/ServerUI/actions/runs/43878781848
 
 ## Alcance entregado
 
@@ -53,7 +55,7 @@ asignar el PTY; la TUI no solicita ni usa esas capacidades.
 | SSH Ubuntu, dos sesiones | Demo ASCII sin color, resize y q; escenario error y Ctrl+C aprobados |
 | Seguridad de demo | Revisión de fuentes: sin lector de métricas, comandos, red ni escrituras de aplicación |
 | Grafo de dependencias | Revisado con cargo metadata; núcleo solo depende de thiserror |
-| GitHub Actions remoto | Requerido en el PR y en main antes de publicar; los runs quedan enlazados en GitHub |
+| GitHub Actions remoto | Aprobado en PR #1 y main; run final 43878781848 |
 
 Los tests Rust cubren contrato mock, vacío/error/recuperación, retención de la
 última muestra, navegación y ayuda, teclado, fuente de eventos y reloj falsos,
