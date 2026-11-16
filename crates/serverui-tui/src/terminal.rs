@@ -111,7 +111,13 @@ impl<C: TerminalControl> Drop for Guard<C> {
 /// Restore before the original hook prints the panic report.
 pub fn install_panic_hook() {
     let previous = std::panic::take_hook();
+    let owner = std::thread::current().id();
     std::panic::set_hook(Box::new(move |info| {
+        // The sampler catches background panics and reports a typed error.
+        // Restoring here for its panic would abandon a still-running UI.
+        if std::thread::current().id() != owner {
+            return;
+        }
         let mut control = NativeControl;
         let _ = control.cursor(true);
         let _ = control.alternate(false);

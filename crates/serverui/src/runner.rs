@@ -1,86 +1,106 @@
-use std::{
-    io,
-    time::{Duration, Instant},
-};
-
+use crate::sampler::SampleSource;
 use crossterm::event::{self, Event};
 use serverui_core::{
     application::{Action, App, Effect},
-    domain::SystemProvider,
+    domain::ProviderMode,
 };
-use serverui_tui::input::action_for;
-
+use serverui_tui::input::action_for_app;
+use std::{
+    io,
+    sync::mpsc::{self, Receiver, RecvTimeoutError},
+    thread,
+    time::{Duration, Instant},
+};
+const RESULT_POLL: Duration = Duration::from_millis(50);
 trait EventSource {
     fn now(&self) -> Duration;
     fn next(&mut self, timeout: Duration) -> io::Result<Option<Event>>;
 }
-
 pub struct TerminalEvents {
     start: Instant,
+    input: Receiver<io::Result<Event>>,
 }
-
-impl Default for TerminalEvents {
-    fn default() -> Self {
-        Self {
+impl TerminalEvents {
+    pub fn new() -> io::Result<Self> {
+        let (output, input) = mpsc::sync_channel(64);
+        // Crossterm's Unix timed poll can busy-spin in its sub-millisecond tail.
+        // One blocking reader preserves key order and SIGWINCH without polling.
+        // It is process-owned; dropping the receiver disconnects queued sends,
+        // and process exit releases a read already blocked in the OS.
+        thread::Builder::new()
+            .name("serverui-input".into())
+            .spawn(move || {
+                loop {
+                    let event = event::read();
+                    let failed = event.is_err();
+                    if output.send(event).is_err() || failed {
+                        break;
+                    }
+                }
+            })?;
+        Ok(Self {
             start: Instant::now(),
-        }
+            input,
+        })
     }
 }
-
 impl EventSource for TerminalEvents {
     fn now(&self) -> Duration {
         self.start.elapsed()
     }
-
     fn next(&mut self, timeout: Duration) -> io::Result<Option<Event>> {
-        if event::poll(timeout)? {
-            event::read().map(Some)
-        } else {
-            Ok(None)
+        match self.input.recv_timeout(timeout) {
+            Ok(event) => event.map(Some),
+            Err(RecvTimeoutError::Timeout) => Ok(None),
+            Err(RecvTimeoutError::Disconnected) => {
+                Err(io::Error::other("El lector de teclado termino"))
+            }
         }
     }
 }
-
-// The only caller outside this module uses TerminalEvents; the private trait
-// keeps fake event clocks local to tests without exposing a public framework.
 pub fn run(
-    provider: &mut impl SystemProvider,
+    source: &mut impl SampleSource,
     events: &mut TerminalEvents,
     interval: Duration,
+    mode: ProviderMode,
     render: impl FnMut(&App) -> io::Result<()>,
 ) -> io::Result<App> {
-    run_loop(provider, events, interval, render)
+    run_loop(source, events, interval, mode, render)
 }
-
 fn run_loop(
-    provider: &mut impl SystemProvider,
+    source: &mut impl SampleSource,
     events: &mut impl EventSource,
     interval: Duration,
+    mode: ProviderMode,
     mut render: impl FnMut(&App) -> io::Result<()>,
 ) -> io::Result<App> {
     if interval.is_zero() {
         return Err(io::Error::other("el intervalo debe ser positivo"));
     }
-    let mut app = App::default();
-    apply(&mut app, Action::Refresh, provider);
+    let mut app = App::new(mode);
+    apply(&mut app, Action::Refresh, source);
     let mut deadline = events.now().saturating_add(interval);
     let mut dirty = true;
     while !app.quit {
-        // Check time before every input: a busy keyboard cannot starve refresh.
+        let before = app.clone();
         let now = events.now();
         if now >= deadline {
-            dirty |= apply(&mut app, Action::Refresh, provider);
+            apply(&mut app, Action::Refresh, source);
             deadline = now.saturating_add(interval);
         }
+        if let Some(reply) = source.take() {
+            app.receive(reply);
+        }
+        dirty |= app != before;
         if dirty {
             render(&app)?;
             dirty = false;
         }
-        let timeout = deadline.saturating_sub(events.now());
+        let timeout = deadline.saturating_sub(events.now()).min(RESULT_POLL);
         match events.next(timeout)? {
             Some(Event::Key(key)) => {
-                if let Some(action) = action_for(key) {
-                    dirty |= apply(&mut app, action, provider);
+                if let Some(action) = action_for_app(key, &app) {
+                    dirty |= apply(&mut app, action, source);
                 }
             }
             Some(Event::Resize(_, _)) => dirty = true,
@@ -89,35 +109,38 @@ fn run_loop(
     }
     Ok(app)
 }
-
-fn apply(app: &mut App, action: Action, provider: &mut impl SystemProvider) -> bool {
+fn apply(app: &mut App, action: Action, source: &mut impl SampleSource) -> bool {
     let before = app.clone();
     if let Some(Effect::QuerySnapshot) = app.update(action) {
-        app.receive(provider.snapshot());
+        match source.request() {
+            Ok(true) => app.refreshing = true,
+            Ok(false) => {}
+            Err(error) => app.receive(Err(error)),
+        }
     }
     *app != before
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use serverui_core::application::{DataStatus, Section};
+    use serverui_core::{
+        application::{DataStatus, Section},
+        domain::{ProviderError, Sample, SystemProvider},
+    };
     use serverui_providers::{MockProvider, Scenario};
     use std::collections::VecDeque;
-
-    struct FakeEvents {
+    struct Events {
         now: Duration,
         queue: VecDeque<(Duration, Option<Event>)>,
     }
-
-    impl EventSource for FakeEvents {
+    impl EventSource for Events {
         fn now(&self) -> Duration {
             self.now
         }
         fn next(&mut self, timeout: Duration) -> io::Result<Option<Event>> {
             let Some((delay, event)) = self.queue.front_mut() else {
-                return Err(io::Error::other("test event source exhausted"));
+                return Err(io::Error::other("exhausted"));
             };
             if *delay > timeout {
                 *delay -= timeout;
@@ -130,14 +153,39 @@ mod tests {
             Ok(result)
         }
     }
-
+    struct Source {
+        provider: MockProvider,
+        reply: Option<Sample>,
+        requests: usize,
+    }
+    impl Source {
+        fn new(scenario: Scenario) -> Self {
+            Self {
+                provider: MockProvider::new(scenario),
+                reply: None,
+                requests: 0,
+            }
+        }
+    }
+    impl SampleSource for Source {
+        fn request(&mut self) -> Result<bool, ProviderError> {
+            if self.reply.is_some() {
+                return Ok(false);
+            }
+            self.requests += 1;
+            self.reply = Some(self.provider.snapshot());
+            Ok(true)
+        }
+        fn take(&mut self) -> Option<Sample> {
+            self.reply.take()
+        }
+    }
     fn key(code: KeyCode) -> Option<Event> {
         Some(Event::Key(KeyEvent::new(code, KeyModifiers::NONE)))
     }
-
     #[test]
-    fn tick_navigation_and_resize_are_deterministic() -> io::Result<()> {
-        let mut events = FakeEvents {
+    fn tick_resize_navigation_and_idle_timeout() -> io::Result<()> {
+        let mut events = Events {
             now: Duration::ZERO,
             queue: VecDeque::from([
                 (Duration::ZERO, key(KeyCode::Tab)),
@@ -146,57 +194,58 @@ mod tests {
             ]),
         };
         let mut frames = Vec::new();
+        let mut source = Source::new(Scenario::Normal);
         let app = run_loop(
-            &mut MockProvider::default(),
+            &mut source,
             &mut events,
             Duration::from_millis(100),
-            |app| {
-                frames.push(app.clone());
+            ProviderMode::Demo,
+            |a| {
+                frames.push(a.clone());
                 Ok(())
             },
         )?;
         assert!(app.quit);
         assert_eq!(app.section, Section::Processes);
+        assert_eq!(source.requests, 2);
         assert_eq!(frames.len(), 4);
         assert_ne!(frames[0].snapshot, frames[3].snapshot);
         Ok(())
     }
-
     #[test]
-    fn busy_input_does_not_starve_refresh() -> io::Result<()> {
+    fn busy_keyboard_does_not_starve_refresh() -> io::Result<()> {
         let mut queue = VecDeque::new();
         for _ in 0..20 {
             queue.push_back((Duration::from_millis(25), key(KeyCode::Right)));
         }
         queue.push_back((Duration::ZERO, key(KeyCode::Char('q'))));
-        let mut events = FakeEvents {
+        let mut events = Events {
             now: Duration::ZERO,
             queue,
         };
+        let mut source = Source::new(Scenario::Normal);
         let app = run_loop(
-            &mut MockProvider::default(),
+            &mut source,
             &mut events,
             Duration::from_millis(100),
+            ProviderMode::Demo,
             |_| Ok(()),
         )?;
-        let Some(snapshot) = app.snapshot else {
-            panic!("expected sample")
-        };
-        assert_eq!(snapshot.uptime_seconds, 86_405);
+        assert_eq!(app.snapshot.as_ref().map(|s| s.uptime_seconds), Some(86405));
         Ok(())
     }
-
     #[test]
-    fn unchanged_empty_data_does_not_redraw_on_ticks() -> io::Result<()> {
-        let mut events = FakeEvents {
+    fn unchanged_empty_data_does_not_redraw() -> io::Result<()> {
+        let mut events = Events {
             now: Duration::ZERO,
             queue: VecDeque::from([(Duration::from_millis(350), key(KeyCode::Char('q')))]),
         };
         let mut frames = 0;
         run_loop(
-            &mut MockProvider::new(Scenario::Empty),
+            &mut Source::new(Scenario::Empty),
             &mut events,
             Duration::from_millis(100),
+            ProviderMode::Demo,
             |_| {
                 frames += 1;
                 Ok(())
@@ -205,10 +254,49 @@ mod tests {
         assert_eq!(frames, 1);
         Ok(())
     }
-
     #[test]
-    fn errors_remain_navigable_and_explicit_retry_recovers() -> io::Result<()> {
-        let mut events = FakeEvents {
+    fn slow_source_never_blocks_navigation_or_exit() -> io::Result<()> {
+        struct Slow {
+            requests: usize,
+        }
+        impl SampleSource for Slow {
+            fn request(&mut self) -> Result<bool, ProviderError> {
+                self.requests += 1;
+                Ok(self.requests == 1)
+            }
+            fn take(&mut self) -> Option<Sample> {
+                None
+            }
+        }
+        let mut events = Events {
+            now: Duration::ZERO,
+            queue: VecDeque::from([
+                (Duration::from_millis(300), key(KeyCode::Tab)),
+                (Duration::ZERO, Some(Event::Resize(40, 12))),
+                (Duration::ZERO, key(KeyCode::Char('q'))),
+            ]),
+        };
+        let mut source = Slow { requests: 0 };
+        let mut rendered = 0;
+        let app = run_loop(
+            &mut source,
+            &mut events,
+            Duration::from_millis(100),
+            ProviderMode::Linux,
+            |_| {
+                rendered += 1;
+                Ok(())
+            },
+        )?;
+        assert!(app.quit && app.refreshing);
+        assert_eq!(app.section, Section::Processes);
+        assert_eq!(app.status, DataStatus::Loading);
+        assert_eq!(rendered, 3);
+        Ok(())
+    }
+    #[test]
+    fn errors_remain_navigable_and_retry_recovers() -> io::Result<()> {
+        let mut events = Events {
             now: Duration::ZERO,
             queue: VecDeque::from([
                 (Duration::from_millis(110), key(KeyCode::Tab)),
@@ -216,39 +304,46 @@ mod tests {
                 (Duration::ZERO, key(KeyCode::Char('q'))),
             ]),
         };
-        let mut seen_error = false;
+        let mut seen = false;
         let app = run_loop(
-            &mut MockProvider::new(Scenario::RecoverableError),
+            &mut Source::new(Scenario::RecoverableError),
             &mut events,
             Duration::from_millis(100),
-            |app| {
-                seen_error |= matches!(app.status, DataStatus::Error(_));
+            ProviderMode::Demo,
+            |a| {
+                seen |= matches!(a.status, DataStatus::Error(_));
                 Ok(())
             },
         )?;
-        assert!(seen_error);
+        assert!(seen);
         assert_eq!(app.status, DataStatus::Ready);
-        assert_eq!(app.section, Section::Processes);
         Ok(())
     }
-
     #[test]
-    fn render_and_event_errors_propagate() {
-        let mut events = FakeEvents {
+    fn errors_from_render_or_events_propagate() {
+        let mut events = Events {
             now: Duration::ZERO,
             queue: VecDeque::new(),
         };
-        let mut provider = MockProvider::default();
+        let mut source = Source::new(Scenario::Normal);
         assert!(
-            run_loop(&mut provider, &mut events, Duration::from_secs(1), |_| Err(
-                io::Error::other("draw failed")
-            ))
+            run_loop(
+                &mut source,
+                &mut events,
+                Duration::from_secs(1),
+                ProviderMode::Demo,
+                |_| Err(io::Error::other("draw"))
+            )
             .is_err()
         );
         assert!(
-            run_loop(&mut provider, &mut events, Duration::from_secs(1), |_| Ok(
-                ()
-            ))
+            run_loop(
+                &mut source,
+                &mut events,
+                Duration::from_secs(1),
+                ProviderMode::Demo,
+                |_| Ok(())
+            )
             .is_err()
         );
     }

@@ -25,15 +25,18 @@ fn help_and_version_work_without_a_terminal() -> io::Result<()> {
     }
     let version = command(&["--version"])?;
     assert!(version.status.success());
-    assert!(String::from_utf8_lossy(&version.stdout).contains("0.1.0"));
+    assert!(String::from_utf8_lossy(&version.stdout).contains(env!("CARGO_PKG_VERSION")));
     Ok(())
 }
 
 #[test]
-fn unsupported_real_mode_fails_before_touching_terminal() -> io::Result<()> {
+fn real_mode_validates_platform_and_tty_before_sampling() -> io::Result<()> {
     let output = command(&[])?;
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("proveedor real"));
+    #[cfg(not(target_os = "linux"))]
+    assert!(String::from_utf8_lossy(&output.stderr).contains("requiere Linux"));
+    #[cfg(target_os = "linux")]
+    assert!(String::from_utf8_lossy(&output.stderr).contains("TTY"));
     assert!(!output.stderr.contains(&0x1b));
     assert!(output.stdout.is_empty());
     Ok(())

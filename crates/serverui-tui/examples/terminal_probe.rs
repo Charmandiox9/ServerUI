@@ -8,6 +8,18 @@ fn main() -> ExitCode {
     let result = terminal::run(|terminal| {
         terminal.draw(|frame| frame.render_widget("terminal probe", frame.area()))?;
         match mode.as_str() {
+            "background-panic" => {
+                let caught = std::thread::spawn(|| {
+                    std::panic::catch_unwind(|| panic!("injected worker panic")).is_err()
+                })
+                .join()
+                .map_err(|_| io::Error::other("worker fixture failed"))?;
+                if !caught {
+                    return Err(io::Error::other("worker panic not caught"));
+                }
+                terminal.draw(|frame| frame.render_widget("WORKER_OK", frame.area()))?;
+                Ok(())
+            }
             "panic" => panic!("injected PTY panic"),
             "error" => Err(io::Error::other("injected PTY error")),
             _ => Ok(()),
