@@ -28,7 +28,7 @@ def package(binary, target, output):
     suffix = ".zip" if windows else ".tar.gz"
     archive = output / f"serverui-v{version}-{target}{suffix}"
     if windows:
-        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as bundle:
             for name, data, mode in files:
                 entry = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
                 entry.create_system = 3
@@ -37,7 +37,7 @@ def package(binary, target, output):
                 bundle.writestr(entry, data)
     else:
         with archive.open("wb") as stream:
-            with gzip.GzipFile(filename="", mode="wb", fileobj=stream, mtime=0) as zipped:
+            with gzip.GzipFile(filename="", mode="wb", fileobj=stream, mtime=0, compresslevel=9) as zipped:
                 with tarfile.open(fileobj=zipped, mode="w") as bundle:
                     for name, data, mode in files:
                         entry = tarfile.TarInfo(name)

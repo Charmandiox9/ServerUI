@@ -5,8 +5,19 @@ Administración visual de Ubuntu Server desde la terminal, construida en Rust.
 no consulta métricas reales, ejecuta comandos del sistema ni modifica el host.
 
 El proyecto está vinculado a [Charmandiox9/ServerUI](https://github.com/Charmandiox9/ServerUI).
-La licencia de distribución está pendiente de decisión del propietario; no se
-incluye una licencia por inferencia.
+La licencia open source está pendiente de decisión del propietario. No se
+incluye un archivo de licencia ni se eligió una licencia por inferencia.
+
+Los archivos de [v0.1.0](https://github.com/Charmandiox9/ServerUI/releases/tag/v0.1.0)
+incluyen el binario Linux x86_64 GNU, el binario Windows x86_64 MSVC y checksums
+SHA-256. El archivo Linux conserva el permiso de ejecución. Después de extraer:
+
+```sh
+./serverui --demo
+```
+
+En PowerShell usa `./serverui.exe --demo`. Linux es la plataforma principal del
+producto; Windows permite desarrollar y revisar el modo demo.
 
 ## Ejecutar
 
@@ -148,4 +159,5 @@ shell queda en raw mode, usar `stty sane` y, si hace falta, `reset` en Linux.
 
 Leer `AGENTS.md` antes de contribuir. El alcance y las decisiones están en
 `docs/STAGE_0_PLAN.md`; la evidencia y validaciones pendientes están en
-`docs/ACCEPTANCE_STAGE_0.md`. No se ha publicado una release ni autorizado Stage 1.
+`docs/ACCEPTANCE_STAGE_0.md`. v0.1.0 cierra exclusivamente Stage 0; Stage 1 sigue
+sin autorización.
