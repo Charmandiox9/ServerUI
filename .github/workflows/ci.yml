@@ -1,0 +1,75 @@
+name: Stage 0
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: stage-0-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Rust / ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            binary: target/release/serverui
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary: target/release/serverui.exe
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Python for terminal tests and release packaging
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - name: Toolchain pinned by rust-toolchain.toml
+        run: rustup show active-toolchain
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Tests
+        run: cargo test --workspace --locked
+      - name: Release build
+        run: cargo build --release --locked
+      - name: Build terminal failure probe
+        if: runner.os == 'Linux'
+        run: cargo build --locked -p serverui-tui --example terminal_probe
+      - name: Linux PTY lifecycle and keyboard smoke
+        if: runner.os == 'Linux'
+        run: python3 scripts/pty_smoke.py target/release/serverui target/debug/examples/terminal_probe
+      - name: Build isolated Ubuntu SSH fixture
+        if: runner.os == 'Linux'
+        run: docker build --tag serverui-ssh-smoke:ci - < scripts/Dockerfile.ubuntu-smoke
+      - name: Ubuntu SSH keyboard and resize smoke
+        if: runner.os == 'Linux'
+        run: >-
+          docker run --rm --network none --cap-drop ALL
+          --cap-add SETUID --cap-add SETGID --cap-add SYS_CHROOT
+          --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add KILL --cap-add AUDIT_WRITE
+          --security-opt no-new-privileges
+          --mount "type=bind,source=$GITHUB_WORKSPACE,target=/workspace,readonly"
+          serverui-ssh-smoke:ci python3 /workspace/scripts/ssh_smoke.py /workspace/target/release/serverui
+      - name: Package verified release binary
+        run: python scripts/package_release.py ${{ matrix.binary }} --target ${{ matrix.target }}
+      - name: Save release archives and SHA-256
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: serverui-${{ matrix.target }}
+          path: target/release-assets/*
+          if-no-files-found: error
+          retention-days: 14

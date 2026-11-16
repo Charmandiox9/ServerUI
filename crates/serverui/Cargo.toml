@@ -1,0 +1,23 @@
+[package]
+name = "serverui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+serverui-core.workspace = true
+serverui-providers.workspace = true
+serverui-tui.workspace = true
+clap.workspace = true
+crossterm.workspace = true
+ratatui.workspace = true
+
+# Level-triggered polling avoids dropped keyboard readiness during SIGWINCH.
+# See docs/adr/0001-unix-event-polling.md and scripts/pty_smoke.py.
+[target.'cfg(unix)'.dependencies]
+crossterm = { workspace = true, features = ["use-dev-tty"] }
+
+[lints]
+workspace = true
