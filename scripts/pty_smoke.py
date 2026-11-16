@@ -17,7 +17,7 @@ import termios
 import time
 
 
-def smoke(binary, arguments, keys=None, expected_code=0):
+def smoke(binary, arguments, keys=None, expected_code=0, ready=b"DEMO", actions=b"\t?"):
     master, slave = pty.openpty()
     try:
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
@@ -33,15 +33,15 @@ def smoke(binary, arguments, keys=None, expected_code=0):
         resized = False
         try:
             while time.monotonic() < deadline:
-                ready, _, _ = select.select([master], [], [], 0.05)
-                if ready:
+                readable, _, _ = select.select([master], [], [], 0.05)
+                if readable:
                     try:
                         output.extend(os.read(master, 65536))
                     except OSError as error:
                         if error.errno != errno.EIO:
                             raise
-                if keys is not None and not sent and b"DEMO" in output:
-                    os.write(master, b"\t?")
+                if keys is not None and not sent and ready in output:
+                    os.write(master, actions)
                     # Crossterm also checks dimensions on draw; signal resize
                     # so the OS event path is exercised on the child process.
                     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 12, 40, 0, 0))
@@ -50,7 +50,7 @@ def smoke(binary, arguments, keys=None, expected_code=0):
                 elif sent and not resized:
                     os.write(master, keys)
                     resized = True
-                if child.poll() is not None and not ready:
+                if child.poll() is not None and not readable:
                     break
             if child.poll() is None:
                 raise AssertionError(f"child did not exit: {arguments}; sent={sent}, resized={resized}, head={bytes(output[:1500])!r}, tail={bytes(output[-300:])!r}")
@@ -63,6 +63,8 @@ def smoke(binary, arguments, keys=None, expected_code=0):
                 assert sent, "demo frame not observed"
             if "panic" in arguments:
                 assert output.index(b"\x1b[?1049l") < output.index(b"injected PTY panic"), "panic printed before restoring screen"
+            if "background-panic" in arguments:
+                assert output.index(b"WORKER_OK") < output.index(b"\x1b[?1049l"), "worker panic restored an active UI"
             print(f"PASS {os.path.basename(binary)} {' '.join(arguments)}")
         finally:
             if child.poll() is None:
@@ -79,6 +81,10 @@ if __name__ == "__main__":
     smoke(application, ["--demo", "--ascii", "--no-color", "--refresh-ms", "100"], keys=b"q")
     smoke(application, ["--demo", "--demo-scenario", "empty"], keys=b"\x03")
     smoke(application, ["--demo", "--demo-scenario", "error", "--refresh-ms", "100"], keys=b"q")
+    smoke(application, ["--ascii", "--no-color"], keys=b"q", ready=b"RAM:")
+    # Exercise read-only navigation/filter/inspection through the real event path.
+    smoke(application, ["--ascii", "--no-color"], keys=b"\x03", ready=b"RAM:", actions=b"2/serverui\r\r\t?")
     smoke(probe, ["normal"])
     smoke(probe, ["error"], expected_code=1)
     smoke(probe, ["panic"], expected_code=101)
+    smoke(probe, ["background-panic"])

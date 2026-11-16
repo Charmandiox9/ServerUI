@@ -24,6 +24,9 @@ def package(binary, target, output):
         ("README.md", (root / "README.md").read_bytes(), 0o644),
         ("CHANGELOG.md", (root / "CHANGELOG.md").read_bytes(), 0o644),
     ]
+    install_guide = root / "docs" / "INSTALL_UBUNTU.md"
+    if not windows and install_guide.is_file():
+        files.append(("docs/INSTALL_UBUNTU.md", install_guide.read_bytes(), 0o644))
     output.mkdir(parents=True, exist_ok=True)
     suffix = ".zip" if windows else ".tar.gz"
     archive = output / f"serverui-v{version}-{target}{suffix}"
@@ -47,7 +50,9 @@ def package(binary, target, output):
                         bundle.addfile(entry, io.BytesIO(data))
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     checksum = output / f"{archive.name}.sha256"
-    checksum.write_text(f"{digest}  {archive.name}\n", encoding="ascii")
+    # Windows' default CRLF translation makes GNU sha256sum include CR in
+    # the filename. Release manifests must be byte-for-byte POSIX text.
+    checksum.write_text(f"{digest}  {archive.name}\n", encoding="ascii", newline="\n")
     print(f"{digest}  {archive.name}")
 
 

@@ -1,8 +1,8 @@
 """Measure a prebuilt Linux demo in its own PTY, without changing the host.
 
 Usage: python3 scripts/benchmark_demo.py /path/to/serverui --seconds 600
-Measurements include startup, help response, CPU time and RSS; all /proc access
-is in this development harness, never the product. Output is JSON.
+Measurements include startup, first sample, help response, CPU time and RSS.
+Pass --real to exercise LinuxProvider instead of the isolated demo. Output is JSON.
 """
 
 import argparse
@@ -18,7 +18,7 @@ import termios
 import time
 
 
-def measure(binary, seconds):
+def measure(binary, seconds, real=False):
     master, slave = pty.openpty()
     child = None
     try:
@@ -26,7 +26,7 @@ def measure(binary, seconds):
         before = termios.tcgetattr(slave)
         started = time.monotonic()
         child = subprocess.Popen(
-            [binary, "--demo", "--ascii", "--no-color"],
+            [binary, *([] if real else ["--demo"]), "--ascii", "--no-color"],
             stdin=slave, stdout=slave, stderr=slave,
             env=dict(os.environ, TERM="xterm-256color"), start_new_session=True,
         )
@@ -35,13 +35,16 @@ def measure(binary, seconds):
             ready, _, _ = select.select([master], [], [], timeout)
             return os.read(master, 65536) if ready else b""
 
+        output = bytearray()
+
         def wait_for(marker, timeout=5):
-            output = bytearray()
             deadline = time.monotonic() + timeout
             while time.monotonic() < deadline:
-                output.extend(drain())
                 if marker in output:
+                    end = output.index(marker) + len(marker)
+                    del output[:end]
                     return
+                output.extend(drain())
                 if child.poll() is not None:
                     raise AssertionError(f"demo exited: {bytes(output)!r}")
             raise AssertionError(f"frame not observed: {marker!r}")
@@ -58,8 +61,10 @@ def measure(binary, seconds):
                         return int(line.split()[1]) * 1024
             raise AssertionError("VmRSS unavailable")
 
-        wait_for(b"DEMO")
+        wait_for(b"LINUX" if real else b"DEMO")
         first_frame_ms = (time.monotonic() - started) * 1000
+        wait_for(b"RAM:")
+        first_sample_ms = (time.monotonic() - started) * 1000
         response_started = time.monotonic()
         os.write(master, b"?")
         wait_for(b"Ayuda")
@@ -89,6 +94,8 @@ def measure(binary, seconds):
             "platform": platform.platform(), "cpu": platform.machine(),
             "logical_cpus": os.cpu_count(), "terminal": "xterm-256color PTY 80x24",
             "refresh_ms": 1000, "duration_seconds": round(elapsed, 2),
+            "mode": "linux" if real else "demo",
+            "first_sample_ms": round(first_sample_ms, 3),
             "first_frame_ms": round(first_frame_ms, 3), "help_response_ms": round(help_ms, 3),
             "cpu_percent_one_core": round(cpu_percent, 4),
             "rss_min_bytes": min(value for _, value in samples),
@@ -114,7 +121,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("binary", type=os.path.abspath)
     parser.add_argument("--seconds", type=int, default=600)
+    parser.add_argument("--real", action="store_true", help="Measure LinuxProvider read-only mode")
     args = parser.parse_args()
     if args.seconds < 1:
         parser.error("--seconds must be positive")
-    measure(args.binary, args.seconds)
+    measure(args.binary, args.seconds, args.real)
