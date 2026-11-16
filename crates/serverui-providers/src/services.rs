@@ -344,31 +344,44 @@ mod native {
             assert!(limited);
         }
         #[test]
-        fn command_runner_handles_success_denial_timeout_and_output_limit() {
-            // Fixture processes only: no systemctl/journalctl or host mutation.
-            fn fixture(code: &str) -> Command {
-                #[cfg(windows)]
-                let mut c = Command::new("python");
-                #[cfg(not(windows))]
-                let mut c = Command::new("python3");
-                c.args(["-c", code]);
-                c
+        fn command_runner_handles_success_denial_timeout_and_output_limit() -> std::io::Result<()> {
+            // Spawn our Rust test executable: independent of Python startup,
+            // site initialization and PATH differences on hosted Windows.
+            fn fixture(scenario: &str) -> std::io::Result<Command> {
+                let mut command = Command::new(std::env::current_exe()?);
+                command
+                    .args([
+                        "--exact",
+                        "services::native::tests::command_fixture",
+                        "--ignored",
+                        "--nocapture",
+                    ])
+                    .env("SERVERUI_COMMAND_FIXTURE", scenario);
+                Ok(command)
             }
-            assert_eq!(
-                command(fixture("print('ok')"), TIMEOUT)
-                    .ok()
-                    .map(|b| String::from_utf8_lossy(&b).trim().to_string()),
-                Some("ok".into())
-            );
-            assert!(command(fixture("import sys; sys.exit(1)"), TIMEOUT).is_err());
-            assert!(
-                command(
-                    fixture("import time; time.sleep(10)"),
-                    Duration::from_millis(20)
-                )
-                .is_err()
-            );
-            assert!(command(fixture("print('x'*300000)"), TIMEOUT).is_err());
+            let output = command(fixture("success")?, TIMEOUT).map_err(std::io::Error::other)?;
+            assert!(String::from_utf8_lossy(&output).contains("SERVERUI_FIXTURE_OK"));
+            assert!(command(fixture("denial")?, TIMEOUT).is_err());
+            assert!(command(fixture("timeout")?, Duration::from_millis(20)).is_err());
+            assert!(command(fixture("limit")?, TIMEOUT).is_err());
+            Ok(())
+        }
+        #[test]
+        #[ignore = "subprocess fixture, launched explicitly by the command boundary test"]
+        fn command_fixture() -> std::io::Result<()> {
+            match std::env::var("SERVERUI_COMMAND_FIXTURE").as_deref() {
+                Ok("success") => println!("SERVERUI_FIXTURE_OK"),
+                Ok("denial") => std::process::exit(7),
+                Ok("timeout") => loop {
+                    thread::park();
+                },
+                Ok("limit") => {
+                    use std::io::Write;
+                    std::io::stdout().write_all(&vec![b'x'; 300_000])?;
+                }
+                _ => return Err(std::io::Error::other("Fixture scenario missing")),
+            }
+            Ok(())
         }
     }
 }

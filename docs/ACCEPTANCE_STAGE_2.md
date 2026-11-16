@@ -85,8 +85,13 @@ en esta sesión. No son pruebas de diez minutos, hosts grandes ni acciones syste
 Tests puros cubren autorización vinculada a unidad/operación, cancelación,
 confirmación única, desaparición, captura de teclado, filtros, historial/logs
 acotados, saturación (1000 peticiones), worker lento, pánico y creación diferida.
-Fixtures de comandos Python comprueban éxito, salida no cero, timeout y exceso
+Fixtures de procesos comprueban éxito, salida no cero, timeout y exceso
 de salida; nunca invocan systemctl/journalctl ni mutan servicios.
+
+La CI Windows detectó fragilidad en el arranque del fixture Python. Se sustituyó
+por un hijo del propio ejecutable de tests Rust, manteniendo los cuatro casos y
+el timeout de producción. El helper hijo está marcado ignored en la suite normal
+y se invoca explícitamente desde la prueba de frontera; no es un test omitido.
 
 Capturas de `render_preview` inspeccionadas a 80×24 y 40×12; provienen del buffer
 real de Ratatui con datos simulados y no equivalen a una sesión SSH física.
