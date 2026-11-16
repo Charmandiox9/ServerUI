@@ -1,4 +1,5 @@
 mod runner;
+mod sampler;
 
 use std::{
     io::{self, IsTerminal},
@@ -7,6 +8,7 @@ use std::{
 };
 
 use clap::{Parser, ValueEnum};
+use serverui_core::domain::{ProviderError, ProviderMode, SystemProvider};
 use serverui_providers::{MockProvider, Scenario};
 use serverui_tui::{render::DisplayOptions, terminal};
 
@@ -21,7 +23,7 @@ enum DemoScenario {
 #[derive(Debug, Parser)]
 #[command(
     version,
-    about = "ServerUI: administracion visual de servidor. Stage 0: solo DEMO."
+    about = "ServerUI: Dashboard y procesos Linux de solo lectura. --demo: datos simulados."
 )]
 struct Args {
     /// Usar datos simulados sin consultar ni modificar el host
@@ -53,14 +55,14 @@ fn main() -> ExitCode {
 }
 
 fn start(args: Args) -> io::Result<()> {
-    if !args.demo {
+    if !args.demo && !cfg!(target_os = "linux") {
         return Err(io::Error::other(
-            "el proveedor real esta pendiente; ejecuta cargo run -- --demo",
+            "el proveedor real requiere Linux; ejecuta cargo run -- --demo",
         ));
     }
     if !io::stdin().is_terminal() || !io::stdout().is_terminal() {
         return Err(io::Error::other(
-            "--demo requiere una terminal interactiva (TTY) en stdin y stdout",
+            "se requiere una terminal interactiva (TTY) en stdin y stdout",
         ));
     }
     let scenario = match args.demo_scenario {
@@ -68,7 +70,11 @@ fn start(args: Args) -> io::Result<()> {
         DemoScenario::Empty => Scenario::Empty,
         DemoScenario::Error => Scenario::RecoverableError,
     };
-    let mut provider = MockProvider::new(scenario);
+    let mode = if args.demo {
+        ProviderMode::Demo
+    } else {
+        ProviderMode::Linux
+    };
     let options = DisplayOptions {
         ascii: args.ascii,
         no_color: args.no_color
@@ -76,11 +82,13 @@ fn start(args: Args) -> io::Result<()> {
         refresh_ms: args.refresh_ms,
     };
     terminal::install_panic_hook();
+    let mut source = sampler::Sampler::spawn(move || make_provider(args.demo, scenario))?;
     terminal::run(|terminal| {
         runner::run(
-            &mut provider,
-            &mut runner::TerminalEvents::default(),
+            &mut source,
+            &mut runner::TerminalEvents::new()?,
             Duration::from_millis(args.refresh_ms),
+            mode,
             |app| {
                 terminal
                     .draw(|frame| serverui_tui::render::draw(frame, app, options))
@@ -89,4 +97,23 @@ fn start(args: Args) -> io::Result<()> {
         )
         .map(|_| ())
     })
+}
+
+fn make_provider(
+    demo: bool,
+    scenario: Scenario,
+) -> Result<Box<dyn SystemProvider + Send>, ProviderError> {
+    if demo {
+        return Ok(Box::new(MockProvider::new(scenario)));
+    }
+    #[cfg(target_os = "linux")]
+    {
+        Ok(Box::new(serverui_providers::LinuxProvider::new()?))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Err(ProviderError::Unavailable(
+            "El proveedor real requiere Linux".into(),
+        ))
+    }
 }

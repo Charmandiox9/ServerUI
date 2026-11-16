@@ -25,6 +25,9 @@ transitiva de sondeo de descriptores, justificada por esta corrección.
 
 Referencias oficiales:
 
+Evolución en Stage 1: se conserva esta fuente Unix, pero su lectura usa un hilo
+bloqueante en vez de poll con timeout corto; ver ADR 0002 para el motivo medido.
+
 - https://docs.rs/crossterm/0.29.0/crossterm/#feature-flags
 - https://docs.rs/crossterm/0.29.0/src/crossterm/event/source/unix/mio.rs.html
 - https://docs.rs/crossterm/0.29.0/src/crossterm/event/source/unix/tty.rs.html

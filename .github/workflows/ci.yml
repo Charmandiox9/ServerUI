@@ -1,4 +1,4 @@
-name: Stage 0
+name: Stage 1
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: stage-0-${{ github.ref }}
+  group: stage-1-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -20,7 +20,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-24.04
+          - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             binary: target/release/serverui
           - os: windows-latest
@@ -44,14 +44,22 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Tests
         run: cargo test --workspace --locked
+      - name: Portable archive and checksum regression
+        run: python scripts/test_package_release.py
       - name: Release build
         run: cargo build --release --locked
+      - name: Ubuntu 22.04 GNU libc compatibility
+        if: runner.os == 'Linux'
+        run: python scripts/check_linux_abi.py target/release/serverui --max-glibc 2.35
       - name: Build terminal failure probe
         if: runner.os == 'Linux'
         run: cargo build --locked -p serverui-tui --example terminal_probe
       - name: Linux PTY lifecycle and keyboard smoke
         if: runner.os == 'Linux'
         run: python3 scripts/pty_smoke.py target/release/serverui target/debug/examples/terminal_probe
+      - name: Idle CPU and response regression
+        if: runner.os == 'Linux'
+        run: python3 scripts/benchmark_demo.py target/release/serverui --seconds 15
       - name: Build isolated Ubuntu SSH fixture
         if: runner.os == 'Linux'
         run: docker build --tag serverui-ssh-smoke:ci - < scripts/Dockerfile.ubuntu-smoke

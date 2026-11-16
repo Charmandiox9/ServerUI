@@ -61,6 +61,8 @@ def run(binary):
             print(f"Remote demo UID: {identity}", flush=True)
             smoke("/usr/bin/ssh", ["-tt", *args, binary, "--demo", "--ascii", "--no-color"], keys=b"q")
             smoke("/usr/bin/ssh", ["-tt", *args, binary, "--demo", "--demo-scenario", "error"], keys=b"\x03")
+            smoke("/usr/bin/ssh", ["-tt", *args, binary, "--ascii", "--no-color"], keys=b"q", ready=b"RAM:")
+            smoke("/usr/bin/ssh", ["-tt", *args, binary, "--ascii", "--no-color"], keys=b"\x03", ready=b"RAM:", actions=b"2/serverui\r\r\t?")
         finally:
             server.terminate()
             server.wait(timeout=5)

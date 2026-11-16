@@ -1,99 +1,129 @@
 # ServerUI
 
 Administración visual de Ubuntu Server desde la terminal, construida en Rust.
-**Stage 0 / v0.1.0: únicamente demostración con datos simulados.** La aplicación
-no consulta métricas reales, ejecuta comandos del sistema ni modifica el host.
+**Stage 1 / v0.2.0: Dashboard y procesos de solo lectura.**
+LinuxProvider lee CPU, RAM, swap, discos, uptime y procesos visibles. La TUI no
+modifica el sistema ni ofrece operaciones privilegiadas.
 
-El proyecto está vinculado a [Charmandiox9/ServerUI](https://github.com/Charmandiox9/ServerUI).
-La licencia open source está pendiente de decisión del propietario. No se
-incluye un archivo de licencia ni se eligió una licencia por inferencia.
+La [release v0.2.0](https://github.com/Charmandiox9/ServerUI/releases/tag/v0.2.0)
+incluye binarios x86_64 Linux GNU y Windows MSVC, más checksums SHA-256. Linux
+permite lectura real y demo; Windows conserva demo. La release anterior v0.1.0
+corresponde al Stage 0. La licencia open source sigue pendiente de elección;
+no se incluye una por inferencia.
 
-Los archivos de [v0.1.0](https://github.com/Charmandiox9/ServerUI/releases/tag/v0.1.0)
-incluyen el binario Linux x86_64 GNU, el binario Windows x86_64 MSVC y checksums
-SHA-256. El archivo Linux conserva el permiso de ejecución. Después de extraer:
+Para instalar en Ubuntu Server 22.04 x86_64, seguir
+[la guía de instalación](docs/INSTALL_UBUNTU.md). El baseline GNU se compila sobre
+Ubuntu 22.04 y CI comprueba requisitos glibc no superiores a 2.35. Los manifiestos
+SHA-256 usan saltos LF incluso cuando se generan desde Windows.
+
+## Ejecutar desde el código
+
+Se necesita Rust 1.98.1 mediante rustup y linker de C en Linux, o herramientas
+MSVC/Windows SDK en Windows. Es el toolchain fijado y la versión comprobada.
+En una terminal Linux, como usuario normal:
 
 ```sh
-./serverui --demo
+cargo run --locked
+cargo run --locked -- --ascii --no-color
+cargo run --locked -- --refresh-ms 500
 ```
 
-En PowerShell usa `./serverui.exe --demo`. Linux es la plataforma principal del
-producto; Windows permite desarrollar y revisar el modo demo.
-
-## Ejecutar
-
-Instala Rust mediante rustup y las herramientas de compilación de tu plataforma
-(linker de C en Linux; herramientas MSVC y Windows SDK en Windows). El proyecto
-fija Rust 1.98.1; es la única versión mínima comprobada por ahora. Rustup instala
-el toolchain declarado en `rust-toolchain.toml` cuando sea necesario.
+En Linux y Windows, demo aislada sin consultar métricas del host:
 
 ```sh
 cargo run --locked -- --demo
 cargo run --locked -- --demo --ascii --no-color
-cargo run --locked -- --demo --refresh-ms 500
 cargo run --locked -- --demo --demo-scenario empty
 cargo run --locked -- --demo --demo-scenario error
-cargo run --locked -- --help
 ```
 
-Se requieren stdin y stdout conectados a una terminal interactiva. Sin `--demo`,
-el programa informa que el proveedor real está pendiente y termina sin activar
-los modos del terminal. `--help` y `--version` funcionan con salida redirigida.
+Sin --demo, otras plataformas explican que el proveedor real requiere Linux.
+Stdin y stdout deben ser TTY; help/version funcionan con salida redirigida.
+Para SSH, ejecutar el binario Linux dentro de la sesión del usuario. No se
+requieren daemon, cliente SSH propio, Docker ni privilegios de root para usarlo.
 
-`--refresh-ms` admite 100–60000 ms; el valor predeterminado es 1000. Los escenarios
-son deterministas: `normal` cambia muestras, `empty` no devuelve datos y `error`
-produce una muestra válida, un fallo en la segunda consulta y recuperación en
-la siguiente. `r` consulta inmediatamente; también se reintenta en cada tick.
-Los valores de uptime simulado avanzan por consulta, no miden tiempo del host.
+--refresh-ms admite 100–60000 ms; predeterminado 1000. Consultas reales anteriores
+al intervalo mínimo de CPU de sysinfo reutilizan la muestra cacheada. Discos se
+refrescan a lo sumo cada 5 s. r solicita actualización sin encolar peticiones
+ilimitadas; si hay una consulta en vuelo se coalesce la petición.
 
-`--ascii` evita bordes Unicode. `--no-color` conserva los colores predeterminados
-del terminal; también se respeta una variable `NO_COLOR` no vacía. Los estados
-se identifican con texto, sin depender del color. La CLI usa texto sin color.
+--ascii evita glifos Unicode y --no-color conserva los colores del terminal.
+También se respeta NO_COLOR no vacío. Los estados se identifican con texto.
 
-## Teclado y pantallas
+## Navegación
 
 | Tecla | Acción |
 | --- | --- |
-| Tab / derecha | Siguiente sección |
-| Shift+Tab / izquierda | Sección anterior |
+| Tab / Shift+Tab / izquierda / derecha | Cambiar sección |
 | 1–4 | Dashboard, Procesos, Servicios, Ajustes |
-| ? / Escape | Abrir o cerrar ayuda / cerrar ayuda |
-| r | Actualizar datos simulados o reintentar |
-| q / Ctrl+C | Salir, también desde la ayuda |
+| Arriba/abajo o j/k | Seleccionar proceso; desplazar montajes en Dashboard |
+| Home / End | Primera/última fila o montaje |
+| / | Editar filtro de procesos por nombre o PID |
+| Enter / Escape durante filtro | Terminar edición conservando el filtro |
+| Ctrl+U durante filtro | Limpiar filtro |
+| s / S | Cambiar criterio de orden / invertir dirección |
+| Enter en Procesos | Inspeccionar proceso seleccionado |
+| Escape | Cerrar ayuda o detalle |
+| r | Actualizar o reintentar |
+| ? | Abrir/cerrar ayuda |
+| q / Ctrl+C | Salir; en el filtro q es texto, Ctrl+C siempre sale |
 
-El Dashboard muestra CPU, RAM, swap, disco y uptime **simulados**. Procesos y
-Servicios muestran el stage previsto, sin listar datos reales ni ofrecer
-acciones administrativas. Ajustes informa las opciones de esta ejecución y no
-guarda configuración. La ayuda captura la navegación hasta cerrarla.
+El orden recorre CPU, RAM, PID y nombre; los empates se resuelven por identidad
+para evitar saltos. La selección se conserva al actualizar y reordenar. Si el
+proceso inspeccionado desaparece o cambia su inicio con el mismo PID, se cierra
+el detalle con aviso. La identidad usa la resolución en segundos de sysinfo;
+no se ofrecen acciones basadas en esa identidad.
 
-Diseño completo a 80×24, compacto a 40×12. En áreas menores aparece un aviso y
-continúa disponible la salida por teclado. El resize se procesa por eventos.
-No se requiere ratón, truecolor, fuente de iconos ni entorno gráfico.
+La ayuda captura navegación pero permite refrescos y salida. Servicios sigue
+siendo un placeholder de Stage 2. Ajustes muestra opciones de esta ejecución,
+sin editor persistente. Se admiten 80×24, modo compacto 40×12 y aviso en tamaños
+menores sin perder salida por teclado. No se requieren ratón, truecolor ni iconos.
 
-Para SSH, compila o instala el binario Linux en el servidor de prueba y ejecútalo
-dentro de la sesión SSH como usuario normal. ServerUI no implementa un cliente
-SSH propio. La compatibilidad SSH real requiere el smoke documentado en
-`docs/ACCEPTANCE_STAGE_0.md`; las pruebas de buffers no la certifican.
+## Interpretar las métricas
+
+- CPU global: 0–100 %; CPU de procesos: 100 % representa un núcleo lógico y puede
+  superar 100 %. -- significa que todavía no existe un baseline válido.
+- RAM y swap se convierten de bytes a MiB (1024²). RAM usada en Linux sigue la
+  definición total menos disponible de sysinfo, verificada frente a /proc/meminfo.
+- La tabla muestra RSS, no memoria virtual. El detalle distingue ambas y muestra
+  PID, padre, nombre, estado, CPU, inicio Unix y tiempo activo.
+- Discos se muestran por montaje como espacio disponible para el usuario frente
+  a capacidad total. No se suman montajes que puedan compartir dispositivo.
+  Volúmenes sin datos se marcan no disponibles. sysinfo excluye por defecto
+  tmpfs y FS de red; en un contenedor pueden verse montajes del entorno anfitrión.
+- Procesos visibles no equivale a todos los procesos del host. Permisos, hidepid
+  y namespaces pueden limitar la lista; /proc puede reflejar memoria/CPU del host
+  y no los límites del cgroup. No se afirma detectar procesos ocultos.
+- Snapshot limitado a 10000 procesos y 64 montajes; el recorte se anuncia. Un
+  fallo conserva la última muestra con estado de datos antiguos, no inventa ceros.
+
+No se leen argumentos, entorno, rutas de ejecutables, GPU ni tareas/hilos por
+proceso. Los nombres, montajes y errores se neutralizan antes de renderizar.
+No hay kill, renice, systemd, APT, administración de red/discos ni escritura de
+configuración o historial.
 
 ## Arquitectura
 
 | Crate | Responsabilidad |
 | --- | --- |
-| `serverui-core` | Dominio, contrato SystemProvider, estado y transiciones puras |
-| `serverui-providers` | MockProvider y escenarios repetibles |
-| `serverui-tui` | Teclado, render y ciclo de vida del terminal |
-| `serverui` | CLI, composición, reloj y loop de eventos |
+| serverui-core | Modelos, SystemProvider, estado y transiciones puras |
+| serverui-providers | MockProvider; LinuxProvider cfg Linux con sysinfo mínimo |
+| serverui-tui | Teclas, render y ciclo de vida del terminal |
+| serverui | CLI, composición, worker de recolección y lector de teclado |
 
-Los proveedores y la TUI dependen del núcleo; el binario los compone. Renderizar
-no realiza consultas. Las acciones producen efectos tipados que el runner
-despacha al proveedor. El núcleo no conoce Ratatui, Crossterm ni APIs Linux.
+La UI no consulta al proveedor. El recolector inicializa y lee fuera del hilo de
+UI; tiene canales de capacidad 1 y una petición pendiente. Snapshots inmutables
+se comparten con Arc para no clonar miles de filas por tecla. El lector de
+teclado bloquea en su propio hilo con cola de 64 eventos. La UI espera mediante
+canales estándar hasta 50 ms y redibuja ante cambios. No requiere runtime async.
 
-El loop espera eventos hasta el próximo tick, limita el trabajo por iteración y
-redibuja cuando cambia el estado o tamaño. Las consultas mock son inmediatas;
-no se añade un runtime asíncrono. Antes de integrar un proveedor real se deberá
-ejecutar I/O lento fuera del hilo de UI y revisar cancelación y límites de cola.
-LinuxProvider y las operaciones administrativas pertenecen a etapas futuras.
+Al salir se desconecta/cancela de forma cooperativa, sin join que bloquee la UI.
+Una syscall de recolección o lectura de teclado ya bloqueada no puede cancelarse
+forzosamente: son hilos del proceso, liberados al terminar este. Pánicos del
+recolector se convierten en errores; el hook de limpieza solo restaura el terminal
+ante pánico del hilo de UI. Ver ADR 0001 y 0002.
 
-## Desarrollo y pruebas
+## Desarrollo y verificación
 
 ```sh
 cargo fmt --all -- --check
@@ -102,28 +132,27 @@ cargo test --workspace --locked
 cargo build --release --locked
 ```
 
-CI prepara estos checks en Linux y Windows con el toolchain fijado. Los tests
-cubren transiciones, errores, CLI sin TTY, escenarios mock, avance del reloj ante
-ráfagas de teclado y renderizado en tamaños extremos. No requieren red ni
-privilegios una vez descargadas las dependencias. Cargo.lock se versiona.
-
-Prueba PTY en Linux, con Python 3 estándar:
+Los tests de estado/render/mock no leen el host ni dependen del reloj real.
+Linux añade pruebas de integración que comparan /proc y stat -f, esperan entre
+muestras CPU y crean un proceso sleep efímero que ellas mismas eliminan. Esas
+operaciones de fixture no forman parte de la aplicación. Windows verifica demo.
 
 ```sh
 cargo build --locked -p serverui-tui --example terminal_probe
 python3 scripts/pty_smoke.py target/release/serverui target/debug/examples/terminal_probe
+python3 scripts/benchmark_demo.py target/release/serverui --seconds 60
+python3 scripts/benchmark_demo.py target/release/serverui --real --seconds 120
 ```
 
-El probe es un ejemplo separado para inducir errores/pánicos en un subproceso,
-no una opción del binario de producción. El script comprueba modos termios,
-pantalla alternativa y cursor tras salida normal, Ctrl+C, error y pánico.
+El probe induce fallos/pánicos solo en un ejemplo separado. PTY verifica modos
+termios, cursor y pantalla tras salida, error y pánico; incluye un pánico de
+background para evitar restaurar una UI activa. El benchmark informa RSS, CPU
+por núcleo, primer frame/muestra y ayuda. Los umbrales son controles de desarrollo,
+no garantías para cualquier host, FS remoto o conexión WAN.
 
-En Unix se activa el sondeo de descriptores de Crossterm para evitar pérdida de
-entrada concurrente con resize; el motivo y la regresión están registrados en
-`docs/adr/0001-unix-event-polling.md`.
-
-También se incluye un fixture SSH sobre Ubuntu 24.04 para CI. Construye el
-release Linux antes de usarlo. En un shell Linux con Docker:
+CI repite fmt/Clippy/tests/release en Linux y Windows; Linux añade PTY, regresión
+corta de CPU y SSH Ubuntu. Para repetir SSH con Docker, construir primero el
+release Linux:
 
 ```sh
 docker build --tag serverui-ssh-smoke:local - < scripts/Dockerfile.ubuntu-smoke
@@ -135,29 +164,14 @@ docker run --rm --network none --cap-drop ALL \
   serverui-ssh-smoke:local python3 /workspace/scripts/ssh_smoke.py /workspace/target/release/serverui
 ```
 
-El fixture crea claves efímeras y un servidor de prueba dentro del contenedor;
-la aplicación remota corre como usuario normal. No publica puertos, accede a la
-red externa, monta sockets ni configura SSH en el host. Las capacidades
-declaradas son para el sshd del fixture, nunca para ServerUI. La construcción
-de la imagen sí descarga paquetes de Ubuntu. No sustituye una VM ni pruebas
-con otros clientes y emuladores.
+El fixture genera claves temporales y ejecuta demo y real como usuario remoto
+normal. sshd solo escucha por loopback del contenedor; no hay puertos publicados,
+red externa ni sockets del host montados. Las capacidades son de sshd, nunca de
+ServerUI. Construir la imagen sí descarga paquetes. No sustituye una VM completa.
 
-Para medir un release Linux fuera del compilador:
+El terminal se restaura tras salida, error y pánico con unwinding. SIGKILL,
+panic=abort, fallo del emulador o desconexión abrupta no garantizan cleanup; si
+fuera necesario usar stty sane y reset en el shell Linux.
 
-```sh
-python3 scripts/benchmark_demo.py target/release/serverui --seconds 600
-```
-
-El harness informa RSS en bytes, CPU como porcentaje de un núcleo, primer frame
-y respuesta de ayuda en un PTY local. Sus objetivos son controles de desarrollo,
-no garantías para cualquier hardware o conexión SSH.
-
-El terminal se restaura mediante guard y hook de pánico antes de imprimir
-diagnósticos. No es posible garantizar limpieza tras SIGKILL, `panic=abort`,
-fallo del emulador o desconexión abrupta. Si un proceso es terminado así y el
-shell queda en raw mode, usar `stty sane` y, si hace falta, `reset` en Linux.
-
-Leer `AGENTS.md` antes de contribuir. El alcance y las decisiones están en
-`docs/STAGE_0_PLAN.md`; la evidencia y validaciones pendientes están en
-`docs/ACCEPTANCE_STAGE_0.md`. v0.1.0 cierra exclusivamente Stage 0; Stage 1 sigue
-sin autorización.
+Convenciones en AGENTS.md; plan en docs/STAGE_1_PLAN.md, decisión en ADR 0002 y
+resultados efectivos en docs/ACCEPTANCE_STAGE_1.md. Stage 2 no está autorizado.

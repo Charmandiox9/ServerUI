@@ -1,89 +1,119 @@
-use serverui_core::domain::{ProviderError, Snapshot, SystemProvider};
+use serverui_core::domain::{
+    DiskInfo, DiskSpace, ProcessId, ProcessInfo, ProviderError, Sample, Snapshot, SystemProvider,
+};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Scenario {
     #[default]
     Normal,
     Empty,
-    /// First query succeeds, second fails, later queries recover.
     RecoverableError,
 }
-
 #[derive(Debug, Default)]
 pub struct MockProvider {
     scenario: Scenario,
     step: u64,
 }
-
 impl MockProvider {
     pub fn new(scenario: Scenario) -> Self {
         Self { scenario, step: 0 }
     }
 }
-
 impl SystemProvider for MockProvider {
-    fn snapshot(&mut self) -> Result<Option<Snapshot>, ProviderError> {
+    fn snapshot(&mut self) -> Sample {
         let step = self.step;
         self.step = self.step.saturating_add(1);
         match self.scenario {
             Scenario::Empty => return Ok(None),
             Scenario::RecoverableError if step == 1 => {
                 return Err(ProviderError::Unavailable(
-                    "Fallo simulado; pulsa r para reintentar".into(),
+                    "Fallo simulado; r: reintentar".into(),
                 ));
             }
             _ => {}
         }
-        const GIB: u64 = 1024 * 1024 * 1024;
+        const MIB: u64 = 1024 * 1024;
+        const GIB: u64 = 1024 * MIB;
+        let processes = [
+            "serverui", "sshd", "postgres", "nginx", "systemd", "worker", "backup", "cron",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(i, name)| {
+            let n = i as u64;
+            ProcessInfo {
+                id: ProcessId {
+                    pid: 100 + i as u32,
+                    start_time: 1_700_000_000 + n,
+                },
+                parent_pid: Some(1),
+                name: name.into(),
+                status: if i == 5 { "Running" } else { "Sleeping" }.into(),
+                cpu_usage: Some(((step % 6 + n) * 500) as u32),
+                memory_bytes: (32 + n * 24) * MIB,
+                virtual_memory_bytes: (128 + n * 64) * MIB,
+                run_time_seconds: 3600_u64.saturating_add(step),
+            }
+        })
+        .collect::<Vec<_>>();
         Ok(Some(Snapshot {
-            cpu_percent: [12, 28, 36, 19, 8, 22][(step % 6) as usize],
-            memory_used: 2 * GIB + (step % 8) * 64 * 1024 * 1024,
+            cpu_usage: Some([1200, 2800, 3600, 1900, 800, 2200][(step % 6) as usize]),
+            cpu_count: 4,
+            memory_used: 2 * GIB + (step % 8) * 64 * MIB,
             memory_total: 8 * GIB,
             swap_used: 0,
             swap_total: 2 * GIB,
-            disk_used: 18 * GIB,
-            disk_total: 64 * GIB,
             uptime_seconds: 86_400_u64.saturating_add(step),
+            disks: vec![DiskInfo {
+                mount: "/ (demo)".into(),
+                space: Some(DiskSpace {
+                    total_bytes: 64 * GIB,
+                    available_bytes: 46 * GIB,
+                }),
+            }],
+            disk_warning: None,
+            process_count: processes.len(),
+            processes,
         }))
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use serverui_core::application::{App, DataStatus};
-
     #[test]
-    fn samples_are_repeatable_and_bounded() {
-        let mut first = MockProvider::default();
-        let mut second = MockProvider::default();
+    fn samples_repeat_and_process_ids_are_stable() {
+        let mut a = MockProvider::default();
+        let mut b = MockProvider::default();
+        let mut last_ids = None;
         for _ in 0..100 {
-            let sample = first.snapshot();
-            assert_eq!(sample, second.snapshot());
-            let Ok(Some(sample)) = sample else {
-                panic!("expected demo sample")
-            };
-            assert!(sample.cpu_percent <= 100);
-            assert!(sample.memory_used <= sample.memory_total);
+            let s = a.snapshot();
+            assert_eq!(s, b.snapshot());
+            let Ok(Some(s)) = s else { panic!("sample") };
+            assert!(s.cpu_usage.is_some_and(|v| v <= 10000));
+            assert!(s.memory_used <= s.memory_total);
+            let ids = s.processes.iter().map(|p| p.id).collect::<Vec<_>>();
+            if let Some(before) = last_ids {
+                assert_eq!(ids, before);
+            }
+            last_ids = Some(ids);
         }
     }
-
     #[test]
-    fn empty_scenario_has_no_metrics() {
+    fn empty_has_no_metrics() {
         assert_eq!(MockProvider::new(Scenario::Empty).snapshot(), Ok(None));
     }
-
     #[test]
-    fn error_retains_last_sample_and_retry_recovers() {
-        let mut provider = MockProvider::new(Scenario::RecoverableError);
-        let mut app = App::default();
-        app.receive(provider.snapshot());
-        let previous = app.snapshot.clone();
-        app.receive(provider.snapshot());
-        assert!(matches!(app.status, DataStatus::Error(_)));
-        assert_eq!(app.snapshot, previous);
-        app.receive(provider.snapshot());
-        assert_eq!(app.status, DataStatus::Ready);
-        assert_ne!(app.snapshot, previous);
+    fn error_retains_last_sample_and_recovers() {
+        let mut p = MockProvider::new(Scenario::RecoverableError);
+        let mut a = App::default();
+        a.receive(p.snapshot());
+        let before = a.snapshot.clone();
+        a.receive(p.snapshot());
+        assert!(matches!(a.status, DataStatus::Error(_)));
+        assert_eq!(a.snapshot, before);
+        a.receive(p.snapshot());
+        assert_eq!(a.status, DataStatus::Ready);
+        assert_ne!(a.snapshot, before);
     }
 }

@@ -9,5 +9,8 @@ publish.workspace = true
 [dependencies]
 serverui-core.workspace = true
 
+[target.'cfg(target_os = "linux")'.dependencies]
+sysinfo.workspace = true
+
 [lints]
 workspace = true
