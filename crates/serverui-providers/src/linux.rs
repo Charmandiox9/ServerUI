@@ -1,16 +1,8 @@
-use serverui_core::domain::{
-    DiskInfo, DiskSpace, ProcessId, ProcessInfo, ProviderError, Sample, Snapshot, SystemProvider,
-};
-use std::{
-    collections::HashSet,
-    time::{Duration, Instant},
-};
-use sysinfo::{
-    DiskRefreshKind, Disks, MINIMUM_CPU_UPDATE_INTERVAL, ProcessRefreshKind, ProcessesToUpdate,
-    System,
-};
+use super::linux_processes::Processes;
+use serverui_core::domain::{DiskInfo, DiskSpace, ProviderError, Sample, Snapshot, SystemProvider};
+use std::time::{Duration, Instant};
+use sysinfo::{DiskRefreshKind, Disks, MINIMUM_CPU_UPDATE_INTERVAL, System};
 
-pub const MAX_PROCESSES: usize = 10_000;
 const MAX_DISKS: usize = 64;
 
 pub struct LinuxProvider {
@@ -21,7 +13,8 @@ pub struct LinuxProvider {
     last_disks: Option<Instant>,
     last_sample: Option<Instant>,
     cached: Option<Snapshot>,
-    previous_processes: HashSet<ProcessId>,
+    processes: Processes,
+    origin: Instant,
 }
 
 fn unavailable(context: &str, error: impl std::fmt::Display) -> ProviderError {
@@ -37,6 +30,7 @@ fn usage(value: f32) -> Option<u32> {
 impl LinuxProvider {
     pub fn new() -> Result<Self, ProviderError> {
         Ok(Self {
+            origin: Instant::now(),
             system: System::new().map_err(|e| unavailable("Inicializando Linux", e))?,
             disks: None,
             disk_data: Vec::new(),
@@ -44,7 +38,10 @@ impl LinuxProvider {
             last_disks: None,
             last_sample: None,
             cached: None,
-            previous_processes: HashSet::new(),
+            processes: Processes::new(
+                System::boot_time().map_err(|e| unavailable("Leyendo inicio Linux", e))?,
+            )
+            .map_err(|e| unavailable("Inicializando procesos", e))?,
         })
     }
 
@@ -107,14 +104,6 @@ impl SystemProvider for LinuxProvider {
         let warmed = self.last_sample.is_some();
         self.system.refresh_memory();
         self.system.refresh_cpu_usage();
-        self.system.refresh_processes_specifics(
-            ProcessesToUpdate::All,
-            true,
-            ProcessRefreshKind::nothing()
-                .without_tasks()
-                .with_cpu()
-                .with_memory(),
-        );
         if self.system.total_memory() == 0 || self.system.cpus().is_empty() {
             return Err(ProviderError::Unavailable(
                 "No se pueden leer CPU/RAM desde /proc".into(),
@@ -122,34 +111,10 @@ impl SystemProvider for LinuxProvider {
         }
         let uptime = System::uptime().map_err(|e| unavailable("Leyendo uptime", e))?;
         let cpu_count = self.system.cpus().len().min(u32::MAX as usize) as u32;
-        let mut entries = self.system.processes().iter().collect::<Vec<_>>();
-        entries.sort_unstable_by_key(|(pid, _)| pid.as_u32());
-        let process_count = entries.len();
-        let processes = entries
-            .into_iter()
-            .take(MAX_PROCESSES)
-            .map(|(pid, p)| {
-                let id = ProcessId {
-                    pid: pid.as_u32(),
-                    start_time: p.start_time(),
-                };
-                ProcessInfo {
-                    id,
-                    parent_pid: p.parent().map(|pid| pid.as_u32()),
-                    name: p.name().to_string_lossy().chars().take(128).collect(),
-                    status: p.status().to_string(),
-                    cpu_usage: if warmed && self.previous_processes.contains(&id) {
-                        usage(p.cpu_usage())
-                    } else {
-                        None
-                    },
-                    memory_bytes: p.memory(),
-                    virtual_memory_bytes: p.virtual_memory(),
-                    run_time_seconds: p.run_time(),
-                }
-            })
-            .collect::<Vec<_>>();
-        self.previous_processes = processes.iter().map(|p| p.id).collect();
+        let (processes, process_count) = self
+            .processes
+            .collect(now.saturating_duration_since(self.origin), uptime)
+            .map_err(|e| unavailable("Leyendo procesos", e))?;
         self.refresh_disks(now);
         let snapshot = Snapshot {
             cpu_usage: if warmed {

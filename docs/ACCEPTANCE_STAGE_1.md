@@ -1,5 +1,15 @@
 # Aceptación de ServerUI Stage 1
 
+## Cierre comprobado
+
+El 16 de noviembre de 2026 se verificaron por API de GitHub el PR #2 integrado
+en `7383750bb70bd18483843f33f41bee84cabd4475`, las comprobaciones Linux/Windows
+aprobadas de [CI en main](https://github.com/Charmandiox9/ServerUI/actions/runs/43892160898)
+y la [release v0.2.0 publicada](https://github.com/Charmandiox9/ServerUI/releases/tag/v0.2.0).
+Junto con la evidencia y confirmación física registradas debajo, Stage 1 está
+cerrado. El usuario autorizó avanzar a Stage 2 en esta fecha; el resto de este
+documento conserva el registro histórico previo a esa autorización.
+
 Fecha: 16 de noviembre de 2026. Estado: Stage 1 implementado y validado; el
 usuario confirmó funcionamiento general en su laptop Ubuntu Server 22.04.5
 x86_64 por SSH y autorizó commits, PR y release v0.2.0 con changelog. Publicar

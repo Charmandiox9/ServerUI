@@ -1,4 +1,5 @@
 use crate::domain::{ProcessId, ProcessInfo, ProviderError, ProviderMode, Sample, Snapshot};
+use crate::services::{ServiceOperation, ServiceRequest, Services};
 use std::{cmp::Ordering, sync::Arc};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -91,14 +92,19 @@ pub enum Action {
     FilterInput(char),
     FilterBackspace,
     ClearFilter,
+    ServicePropose(ServiceOperation),
+    ServiceConfirm,
+    ServiceHistory,
 }
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
     QuerySnapshot,
+    Service(ServiceRequest),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct App {
+    pub services: Services,
     pub mode: ProviderMode,
     pub section: Section,
     pub help: bool,
@@ -123,6 +129,7 @@ impl Default for App {
 impl App {
     pub fn new(mode: ProviderMode) -> Self {
         Self {
+            services: Services::default(),
             mode,
             section: Section::Dashboard,
             help: false,
@@ -142,6 +149,113 @@ impl App {
     }
 
     pub fn update(&mut self, action: Action) -> Option<Effect> {
+        if self.section == Section::Services && !self.help && action != Action::Quit {
+            if self.services.confirmation.is_some() {
+                return match action {
+                    Action::ServiceConfirm => self.services.confirm().map(Effect::Service),
+                    Action::NextRow => {
+                        self.services.log_scroll =
+                            self.services.log_scroll.saturating_add(1).min(256);
+                        None
+                    }
+                    Action::PreviousRow => {
+                        self.services.log_scroll = self.services.log_scroll.saturating_sub(1);
+                        None
+                    }
+                    Action::Close => {
+                        self.services.confirmation = None;
+                        None
+                    }
+                    _ => None,
+                };
+            }
+            let mut handled = true;
+            let effect = match action {
+                Action::Refresh if !self.services.busy && !self.services.show_history => {
+                    Some(Effect::Service(match &self.services.logs {
+                        Some((unit, _)) => ServiceRequest::Logs(unit.clone()),
+                        None => ServiceRequest::List,
+                    }))
+                }
+                Action::ServicePropose(operation) => {
+                    self.services.propose(operation);
+                    None
+                }
+                Action::ServiceHistory => {
+                    self.services.show_history = !self.services.show_history;
+                    self.services.log_scroll = 0;
+                    None
+                }
+                Action::ServiceConfirm => None,
+                Action::NextRow => {
+                    self.services.select(1);
+                    None
+                }
+                Action::PreviousRow => {
+                    self.services.select(-1);
+                    None
+                }
+                Action::FirstRow => {
+                    self.services.select(isize::MIN);
+                    None
+                }
+                Action::LastRow => {
+                    self.services.select(isize::MAX);
+                    None
+                }
+                Action::Inspect
+                    if !self.services.busy
+                        && self.services.logs.is_none()
+                        && !self.services.show_history =>
+                {
+                    self.services
+                        .selected
+                        .clone()
+                        .map(ServiceRequest::Logs)
+                        .map(Effect::Service)
+                }
+                Action::Close => {
+                    self.services.show_history = false;
+                    self.services.logs = None;
+                    self.services.editing = false;
+                    None
+                }
+                Action::StartFilter
+                    if self.services.logs.is_none() && !self.services.show_history =>
+                {
+                    self.services.editing = true;
+                    None
+                }
+                Action::FinishFilter => {
+                    self.services.editing = false;
+                    None
+                }
+                Action::FilterInput(c)
+                    if !c.is_control() && self.services.filter.chars().count() < 64 =>
+                {
+                    self.services.filter.push(c);
+                    self.services.reconcile();
+                    None
+                }
+                Action::FilterBackspace => {
+                    self.services.filter.pop();
+                    self.services.reconcile();
+                    None
+                }
+                Action::ClearFilter => {
+                    self.services.filter.clear();
+                    self.services.reconcile();
+                    None
+                }
+                _ => {
+                    handled = false;
+                    None
+                }
+            };
+            if handled {
+                return effect;
+            }
+        }
         match action {
             Action::Quit => self.quit = true,
             Action::Refresh => return Some(Effect::QuerySnapshot),
@@ -212,12 +326,25 @@ impl App {
                 self.filter.clear();
                 self.reconcile_selection();
             }
-            Action::FilterInput(_) => {}
+            Action::FilterInput(_)
+            | Action::ServicePropose(_)
+            | Action::ServiceConfirm
+            | Action::ServiceHistory => {}
+        }
+        if self.section == Section::Services
+            && !self.services.loaded
+            && !self.services.busy
+            && !self.help
+            && matches!(action, Action::Select(_) | Action::Next | Action::Previous)
+        {
+            return Some(Effect::Service(ServiceRequest::List));
         }
         None
     }
 
     fn select_section(&mut self, section: Section) {
+        self.services.editing = false;
+        self.services.confirmation = None;
         self.section = section;
         self.editing_filter = false;
         self.inspecting = None;
@@ -321,6 +448,55 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn service_navigation_confirmation_and_logs_are_pure_effects() {
+        use crate::services::{ServiceData, ServiceInfo, UnitName};
+        let mut app = App::default();
+        assert_eq!(
+            app.update(Action::Select(Section::Services)),
+            Some(Effect::Service(ServiceRequest::List))
+        );
+        let unit = UnitName::parse("fixture.service").unwrap_or_else(|e| panic!("{e}"));
+        app.services.receive(
+            ServiceRequest::List,
+            Ok(ServiceData::List {
+                units: vec![ServiceInfo {
+                    unit: unit.clone(),
+                    load: "loaded".into(),
+                    active: "active".into(),
+                    sub: "running".into(),
+                    description: "Fixture".into(),
+                }],
+                limited: false,
+            }),
+        );
+        assert_eq!(
+            app.update(Action::ServicePropose(ServiceOperation::Stop)),
+            None
+        );
+        app.update(Action::Next);
+        assert_eq!(app.section, Section::Services);
+        app.update(Action::Close);
+        assert_eq!(app.update(Action::ServiceConfirm), None);
+        app.update(Action::ServicePropose(ServiceOperation::Restart));
+        assert_eq!(
+            app.update(Action::ServiceConfirm),
+            Some(Effect::Service(ServiceRequest::Execute(
+                unit.clone(),
+                ServiceOperation::Restart
+            )))
+        );
+        assert_eq!(app.update(Action::ServiceConfirm), None);
+        assert_eq!(
+            app.update(Action::Inspect),
+            Some(Effect::Service(ServiceRequest::Logs(unit)))
+        );
+        app.services.busy = true;
+        app.update(Action::ServicePropose(ServiceOperation::Stop));
+        assert_eq!(app.services.confirmation, None);
+        app.update(Action::Quit);
+        assert!(app.quit);
+    }
     fn sample() -> Snapshot {
         Snapshot {
             processes: [

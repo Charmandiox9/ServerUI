@@ -1,4 +1,4 @@
-name: Stage 1
+name: Stage 2
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: stage-1-${{ github.ref }}
+  group: stage-2-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -46,6 +46,8 @@ jobs:
         run: cargo test --workspace --locked
       - name: Portable archive and checksum regression
         run: python scripts/test_package_release.py
+      - name: Disposable service fixture safety
+        run: python scripts/test_service_acceptance_fixture.py
       - name: Release build
         run: cargo build --release --locked
       - name: Ubuntu 22.04 GNU libc compatibility
@@ -57,6 +59,9 @@ jobs:
       - name: Linux PTY lifecycle and keyboard smoke
         if: runner.os == 'Linux'
         run: python3 scripts/pty_smoke.py target/release/serverui target/debug/examples/terminal_probe
+      - name: Stage 2 demo services and confirmations
+        if: runner.os == 'Linux'
+        run: python3 scripts/service_smoke.py target/release/serverui
       - name: Idle CPU and response regression
         if: runner.os == 'Linux'
         run: python3 scripts/benchmark_demo.py target/release/serverui --seconds 15

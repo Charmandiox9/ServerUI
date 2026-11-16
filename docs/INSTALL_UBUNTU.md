@@ -1,7 +1,7 @@
-# Instalar ServerUI v0.2.0 en Ubuntu Server
+# Instalar ServerUI v0.3.0 en Ubuntu Server
 
-La release v0.2.0 incluye Stage 1 para Ubuntu 22.04 x86_64, con baseline glibc
-2.35. La versión anterior v0.1.0 contiene solamente demo. No se requiere
+La release v0.3.0 incluye Stage 2 para Ubuntu 22.04 x86_64, con baseline glibc
+2.35. v0.2.0 incluye Dashboard/procesos de lectura y v0.1.0 solamente demo. No se requiere
 actualizar Ubuntu, instalar Rust ni ejecutar ServerUI como root para usarlo.
 
 Antes de transferir, comprobar en el servidor:
@@ -16,8 +16,8 @@ Descargar el par de archivos de la release en el servidor:
 
 ```sh
 cd ~
-release_url='https://github.com/Charmandiox9/ServerUI/releases/download/v0.2.0'
-archive='serverui-v0.2.0-x86_64-unknown-linux-gnu.tar.gz'
+release_url='https://github.com/Charmandiox9/ServerUI/releases/download/v0.3.0'
+archive='serverui-v0.3.0-x86_64-unknown-linux-gnu.tar.gz'
 curl -fLO "$release_url/$archive"
 curl -fLO "$release_url/$archive.sha256"
 ```
@@ -26,19 +26,19 @@ Como alternativa, desde PowerShell en la carpeta del proyecto, copiar el paquete
 local ya verificado, reemplazando USUARIO e IP:
 
 ```powershell
-scp .\target\stage1-packages\serverui-v0.2.0-x86_64-unknown-linux-gnu.tar.gz USUARIO@IP:~/
-scp .\target\stage1-packages\serverui-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256 USUARIO@IP:~/
+scp .\target\release-assets\serverui-v0.3.0-x86_64-unknown-linux-gnu.tar.gz USUARIO@IP:~/
+scp .\target\release-assets\serverui-v0.3.0-x86_64-unknown-linux-gnu.tar.gz.sha256 USUARIO@IP:~/
 ```
 
 En la sesión Ubuntu:
 
 ```sh
 cd ~
-sha256sum -c serverui-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &&
-mkdir -p ~/serverui-test-v0.2.0 &&
-tar -xzf serverui-v0.2.0-x86_64-unknown-linux-gnu.tar.gz -C ~/serverui-test-v0.2.0 &&
+sha256sum -c serverui-v0.3.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &&
+mkdir -p ~/serverui-test-v0.3.0 &&
+tar -xzf serverui-v0.3.0-x86_64-unknown-linux-gnu.tar.gz -C ~/serverui-test-v0.3.0 &&
 mkdir -p ~/.local/bin &&
-install -m 755 ~/serverui-test-v0.2.0/serverui ~/.local/bin/serverui
+install -m 755 ~/serverui-test-v0.3.0/serverui ~/.local/bin/serverui
 ```
 
 Continuar solo si el checksum dice OK. Probar primero versión/demo y después
@@ -54,6 +54,13 @@ Verificar Dashboard, 2 para Procesos, / para filtrar, Enter para terminar el
 filtro y abrir detalle, s para ordenar, Escape para cerrar y q para salir.
 En el filtro q es texto; Ctrl+C siempre permite salir. Confirmar que el shell
 recupera cursor y eco normales después de salir.
+
+Servicios (3) permite consultas systemd y journal. a/d/R/e proponen iniciar,
+detener, reiniciar o habilitar la unidad seleccionada; solo y ejecuta y n/Escape
+cancela. Usar los permisos existentes del usuario, sin sudo ni elevar toda la
+TUI. Revisar unidad e impacto antes de confirmar: puede afectar dependencias y
+SSH. Un timeout no garantiza cancelar un job aceptado por systemd; comprobar
+estado antes de reintentar. Las pruebas desechables están en docs/SERVICE_ACCEPTANCE_SSH.md.
 
 ## Diagnóstico de formato y compatibilidad
 
