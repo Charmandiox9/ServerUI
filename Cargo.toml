@@ -1,0 +1,32 @@
+[workspace]
+members = ["crates/serverui", "crates/serverui-core", "crates/serverui-providers", "crates/serverui-tui"]
+default-members = ["crates/serverui"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98.1"
+repository = "https://github.com/Charmandiox9/ServerUI"
+publish = false
+
+[workspace.dependencies]
+serverui-core = { path = "crates/serverui-core" }
+serverui-providers = { path = "crates/serverui-providers" }
+serverui-tui = { path = "crates/serverui-tui" }
+ratatui = { version = "0.30.2", default-features = false, features = ["crossterm"] }
+crossterm = { version = "0.29", default-features = false, features = ["events", "windows"] }
+clap = { version = "4.6", default-features = false, features = ["std", "derive", "help", "usage", "error-context"] }
+thiserror = "2.0"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+
+[profile.release]
+lto = "thin"
+strip = true
+codegen-units = 1
