@@ -43,7 +43,7 @@
 - Cubrir transiciones, contrato mock, filtros, orden estable, selección, desaparición/reutilización de PID y worker lento/saturado. Usar tiempo y eventos inyectados; evitar sleeps en pruebas unitarias. Comparar métricas reales con lecturas independientes en Linux y conservar regresiones PTY/SSH.
 - Tras existir el workspace, ejecutar `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets --locked -- -D warnings` y `cargo test --workspace --locked`. Comprobar compilación release en Linux y demo en Linux y Windows. No presentar comandos planificados como comprobaciones realizadas.
 - Para aceptación, registrar además smoke tests de terminal/SSH y restauración; CI sin TTY no prueba esos comportamientos por sí sola. Documentar mediciones y pruebas pendientes.
-- Actualizar README, CHANGELOG y aceptación de Stage 2 con resultados y límites efectivos. La versión de trabajo es v0.3.0-dev; no publicar commits, PR, tag ni release nuevos sin autorización vigente para esa publicación.
+- Actualizar README, CHANGELOG y aceptación de Stage 2 con resultados y límites efectivos. La versión de trabajo es v0.3.0. El usuario autorizó commits, PR, integración tras CI y release de Stage 2 una vez completado; esa condición funcional quedó satisfecha con la alternativa SSH autorizada. Verificar CI en PR/main antes de publicar. Stage 3 no está autorizado.
 - Usar ramas `feat/`, `fix/` o `docs/` y PR pequeños cuando exista repositorio Git. No asumir que la protección de `main` está configurada ni publicar cambios sin autorización.
 
 ## graphify

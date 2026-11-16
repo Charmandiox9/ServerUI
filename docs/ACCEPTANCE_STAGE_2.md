@@ -1,4 +1,4 @@
-# Aceptación Stage 2 / v0.3.0-dev
+# Aceptación Stage 2 / v0.3.0
 
 16 de noviembre de 2026. **Aceptación funcional completada con la alternativa
 SSH autorizada; publicación pendiente de CI en PR/main.**
@@ -145,7 +145,7 @@ observaron Dashboard, filtro `serverui`, detalle del proceso y salida con códig
 0, cursor y pantalla restaurados. Este caso sí atraviesa el transporte SSH de
 la TUI; las mediciones siguientes usan un PTY local en la laptop remota.
 
-### Rendimiento físico: CPU pendiente
+### Rendimiento físico inicial, antes de optimizar
 
 Refresco 1000 ms, PTY 80×24, ASCII/sin color, cuatro CPU lógicas. Son ventanas
 cortas en una máquina con otros servicios activos; no son comparaciones

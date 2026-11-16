@@ -1,15 +1,15 @@
 # ServerUI
 
 Administración visual de Ubuntu Server desde la terminal, construida en Rust.
-**Stage 2 / v0.3.0-dev en desarrollo; Stage 1 publicado como v0.2.0.**
+**Stage 2 / v0.3.0: servicios systemd, logs y acciones con confirmación.**
 Dashboard y procesos conservan solo lectura. Servicios añade consultas de systemd,
 logs y acciones con confirmación explícita; alcance y aceptación documentados.
 La TUI funciona con los permisos del usuario y nunca solicita sudo.
 
-La [release v0.2.0](https://github.com/Charmandiox9/ServerUI/releases/tag/v0.2.0)
+La [release v0.3.0](https://github.com/Charmandiox9/ServerUI/releases/tag/v0.3.0)
 incluye binarios x86_64 Linux GNU y Windows MSVC, más checksums SHA-256. Linux
 permite lectura real y demo; Windows conserva demo. La release anterior v0.1.0
-corresponde al Stage 0. La licencia open source sigue pendiente de elección;
+corresponde al Stage 0; v0.2.0, al Stage 1. La licencia open source sigue pendiente de elección;
 no se incluye una por inferencia.
 
 Para instalar en Ubuntu Server 22.04 x86_64, seguir
@@ -216,10 +216,10 @@ El terminal se restaura tras salida, error y pánico con unwinding. SIGKILL,
 panic=abort, fallo del emulador o desconexión abrupta no garantizan cleanup; si
 fuera necesario usar stty sane y reset en el shell Linux.
 
-Convenciones en AGENTS.md; plan en docs/STAGE_1_PLAN.md, decisión en ADR 0002 y
+Convenciones en AGENTS.md; plan activo en docs/STAGE_2_PLAN.md, decisiones ADR 0002–0004 y
 resultados históricos en docs/ACCEPTANCE_STAGE_1.md. Stage 2 fue autorizado el
 16 de noviembre de 2026; alcance y verificación en docs/STAGE_2_PLAN.md, ADR 0003
-y docs/ACCEPTANCE_STAGE_2.md. No se ha publicado v0.3.0.
+y docs/ACCEPTANCE_STAGE_2.md. La publicación v0.3.0 requiere CI aprobada en PR/main.
 
 El smoke exploratorio en la laptop física pasó para demo y funciones de lectura.
 El benchmark real inicial superó el umbral de CPU (3,98 % de un núcleo en 60 s).

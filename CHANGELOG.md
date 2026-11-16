@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.3.0-dev — sin publicar
+## v0.3.0 — 2026-11-16
 
 - Stage 1 cerrado: PR #2 integrado, CI Linux/Windows aprobada y v0.2.0 publicada.
 - Stage 2 autorizado: servicios systemd cargados, filtro y captura de logs por unidad.
