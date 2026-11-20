@@ -1,4 +1,5 @@
 use crate::domain::{ProcessId, ProcessInfo, ProviderError, ProviderMode, Sample, Snapshot};
+use crate::packages::{PackageOperation, PackageRequest, Packages};
 use crate::services::{ServiceOperation, ServiceRequest, Services};
 use std::{cmp::Ordering, sync::Arc};
 
@@ -9,13 +10,15 @@ pub enum Section {
     Processes,
     Services,
     Settings,
+    Packages,
 }
 impl Section {
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::Dashboard,
         Self::Processes,
         Self::Services,
         Self::Settings,
+        Self::Packages,
     ];
     pub fn index(self) -> usize {
         match self {
@@ -23,6 +26,7 @@ impl Section {
             Self::Processes => 1,
             Self::Services => 2,
             Self::Settings => 3,
+            Self::Packages => 4,
         }
     }
     pub fn label(self) -> &'static str {
@@ -31,6 +35,7 @@ impl Section {
             Self::Processes => "Procesos",
             Self::Services => "Servicios",
             Self::Settings => "Ajustes",
+            Self::Packages => "Paquetes",
         }
     }
 }
@@ -95,16 +100,21 @@ pub enum Action {
     ServicePropose(ServiceOperation),
     ServiceConfirm,
     ServiceHistory,
+    PackagePropose(PackageOperation),
+    PackageConfirm,
+    PackageUndo,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
     QuerySnapshot,
     Service(ServiceRequest),
+    Package(PackageRequest),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct App {
     pub services: Services,
+    pub packages: Packages,
     pub mode: ProviderMode,
     pub section: Section,
     pub help: bool,
@@ -130,6 +140,7 @@ impl App {
     pub fn new(mode: ProviderMode) -> Self {
         Self {
             services: Services::default(),
+            packages: Packages::default(),
             mode,
             section: Section::Dashboard,
             help: false,
@@ -149,6 +160,73 @@ impl App {
     }
 
     pub fn update(&mut self, action: Action) -> Option<Effect> {
+        if action == Action::Quit && matches!(self.packages.busy, Some(PackageRequest::Apply(_))) {
+            self.help = false;
+            self.select_section(Section::Packages);
+            return None;
+        }
+        if self.section == Section::Packages && !self.help && action != Action::Quit {
+            let packages = &mut self.packages;
+            let request = match action {
+                Action::Close => {
+                    packages.close();
+                    return None;
+                }
+                Action::NextRow | Action::PreviousRow => {
+                    packages.select(if action == Action::NextRow { 1 } else { -1 });
+                    return None;
+                }
+                Action::PackageConfirm => {
+                    return packages
+                        .confirmation
+                        .take()
+                        .map(PackageRequest::Apply)
+                        .map(Effect::Package);
+                }
+                _ if packages.confirmation.is_some() => return None,
+                Action::Refresh | Action::FinishFilter if packages.busy.is_none() => {
+                    packages.search()
+                }
+                Action::PackagePropose(operation)
+                    if packages.busy.is_none()
+                        && packages.report.is_none()
+                        && !packages.editing =>
+                {
+                    packages.preview(operation)
+                }
+                Action::PackageUndo => packages
+                    .report
+                    .as_ref()
+                    .and_then(|report| report.undo_install.clone())
+                    .map(|name| PackageRequest::Preview(name, PackageOperation::Remove)),
+                Action::StartFilter if packages.busy.is_none() => {
+                    packages.close();
+                    packages.editing = true;
+                    return None;
+                }
+                Action::FilterInput(c) if packages.editing => {
+                    if (c.is_ascii_lowercase()
+                        || c.is_ascii_digit()
+                        || matches!(c, '.' | '+' | '-'))
+                        && packages.query.len() < 128
+                    {
+                        packages.query.push(c);
+                    }
+                    return None;
+                }
+                Action::FilterBackspace if packages.editing => {
+                    packages.query.pop();
+                    return None;
+                }
+                Action::ClearFilter if packages.editing => {
+                    packages.query.clear();
+                    return None;
+                }
+                Action::Refresh => return None,
+                _ => return self.update_general(action),
+            };
+            return request.map(Effect::Package);
+        }
         if self.section == Section::Services && !self.help && action != Action::Quit {
             if self.services.confirmation.is_some() {
                 return match action {
@@ -256,6 +334,11 @@ impl App {
                 return effect;
             }
         }
+        self.update_general(action)
+    }
+
+    fn update_general(&mut self, action: Action) -> Option<Effect> {
+        let count = Section::ALL.len();
         match action {
             Action::Quit => self.quit = true,
             Action::Refresh => return Some(Effect::QuerySnapshot),
@@ -271,8 +354,10 @@ impl App {
                 }
             }
             _ if self.help => {}
-            Action::Next => self.select_section(Section::ALL[(self.section.index() + 1) % 4]),
-            Action::Previous => self.select_section(Section::ALL[(self.section.index() + 3) % 4]),
+            Action::Next => self.select_section(Section::ALL[(self.section.index() + 1) % count]),
+            Action::Previous => {
+                self.select_section(Section::ALL[(self.section.index() + count - 1) % count])
+            }
             Action::Select(section) => self.select_section(section),
             Action::NextRow if self.section == Section::Dashboard => {
                 self.dashboard_scroll = self.dashboard_scroll.saturating_add(1).min(
@@ -329,7 +414,10 @@ impl App {
             Action::FilterInput(_)
             | Action::ServicePropose(_)
             | Action::ServiceConfirm
-            | Action::ServiceHistory => {}
+            | Action::ServiceHistory
+            | Action::PackageConfirm
+            | Action::PackageUndo
+            | Action::PackagePropose(_) => {}
         }
         if self.section == Section::Services
             && !self.services.loaded
@@ -339,12 +427,23 @@ impl App {
         {
             return Some(Effect::Service(ServiceRequest::List));
         }
+        if self.section == Section::Packages
+            && !self.packages.searched
+            && self.packages.busy.is_none()
+            && self.packages.message.is_none()
+            && matches!(action, Action::Select(_) | Action::Next | Action::Previous)
+        {
+            return Some(Effect::Package(PackageRequest::Recommendations));
+        }
         None
     }
 
     fn select_section(&mut self, section: Section) {
         self.services.editing = false;
         self.services.confirmation = None;
+        if self.section == Section::Packages && section != Section::Packages {
+            self.packages.close();
+        }
         self.section = section;
         self.editing_filter = false;
         self.inspecting = None;
@@ -530,7 +629,7 @@ mod tests {
     fn navigation_and_help() {
         let mut a = App::default();
         a.update(Action::Previous);
-        assert_eq!(a.section, Section::Settings);
+        assert_eq!(a.section, Section::Packages);
         a.update(Action::Next);
         assert_eq!(a.section, Section::Dashboard);
         a.update(Action::ToggleHelp);

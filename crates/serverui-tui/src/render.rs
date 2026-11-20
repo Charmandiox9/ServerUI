@@ -9,6 +9,7 @@ use serverui_core::{
     application::{App, DataStatus, Section},
     domain::ProviderMode,
 };
+mod packages;
 
 #[derive(Debug, Clone, Copy)]
 pub struct DisplayOptions {
@@ -78,6 +79,8 @@ fn status(app: &App, options: DisplayOptions) -> String {
                 "Datos simulados"
             } else if app.section == Section::Services {
                 "Servicios: acciones con confirmacion"
+            } else if app.section == Section::Packages {
+                "APT: cambios con confirmacion"
             } else {
                 "Datos Linux / solo lectura"
             },
@@ -117,10 +120,10 @@ pub fn draw(frame: &mut Frame, app: &App, options: DisplayOptions) {
         Paragraph::new(format!(
             "ServerUI / v{} / {}",
             env!("CARGO_PKG_VERSION"),
-            if app.section == Section::Services && app.mode == ProviderMode::Linux {
-                "LINUX / SERVICIOS"
-            } else {
-                app.mode.label()
+            match (app.mode, app.section) {
+                (ProviderMode::Linux, Section::Services) => "LINUX / SERVICIOS",
+                (ProviderMode::Linux, Section::Packages) => "LINUX / APT",
+                _ => app.mode.label(),
             }
         ))
         .style(accent.add_modifier(Modifier::BOLD)),
@@ -135,6 +138,7 @@ pub fn draw(frame: &mut Frame, app: &App, options: DisplayOptions) {
                     Section::Processes => "Proc",
                     Section::Services => "Serv",
                     Section::Settings => "Ajust",
+                    Section::Packages => "APT",
                 }
             } else {
                 section.label()
@@ -187,9 +191,18 @@ pub fn draw(frame: &mut Frame, app: &App, options: DisplayOptions) {
                     Line::from("y: confirmar | n/Esc: cancelar"),
                     Line::from("h: historial | r: refrescar | q: salir"),
                 ]
+            } else if app.section == Section::Packages {
+                vec![
+                    Line::from("/: buscar en cache | r: repetir"),
+                    Line::from("j/k: seleccionar o desplazar salida"),
+                    Line::from("i: instalar | u: actualizar | d: quitar"),
+                    Line::from("y: aplicar plan | n/Esc: cancelar"),
+                    Line::from("APT requiere autorizacion puntual"),
+                    Line::from("Tab: seccion | q: salir al terminar"),
+                ]
             } else {
                 vec![
-                    Line::from("Tab/Shift+Tab/flechas: seccion; 1-4"),
+                    Line::from("Tab/Shift+Tab/flechas: seccion; 1-5"),
                     Line::from("Arriba/abajo: fila/disco; Enter: detalle"),
                     Line::from("/: filtro | s: orden | S: invertir"),
                     Line::from("r: refrescar | Esc: volver/cerrar"),
@@ -235,6 +248,8 @@ pub fn draw(frame: &mut Frame, app: &App, options: DisplayOptions) {
         );
     } else if app.section == Section::Services {
         services(frame, inner, app, options, accent);
+    } else if app.section == Section::Packages {
+        packages::draw(frame, inner, &app.packages, options, accent);
     } else if app.section == Section::Dashboard {
         dashboard(frame, inner, app, options, accent);
     } else if app.section == Section::Processes {
@@ -245,7 +260,9 @@ pub fn draw(frame: &mut Frame, app: &App, options: DisplayOptions) {
             inner,
         );
     }
-    let footer = if app.section == Section::Services && app.services.confirmation.is_some() {
+    let footer = if app.section == Section::Packages {
+        packages::footer(&app.packages)
+    } else if app.section == Section::Services && app.services.confirmation.is_some() {
         "y: confirmar | n/Esc: cancelar | q: salir"
     } else if app.section == Section::Services && app.services.editing {
         "Filtro | Enter/Esc: fin | Ctrl+U: limpiar"
@@ -705,7 +722,7 @@ fn content(app: &App, options: DisplayOptions) -> Vec<Line<'static>> {
             }
             lines
         }
-        Section::Processes => Vec::new(),
+        Section::Processes | Section::Packages => Vec::new(),
     }
 }
 

@@ -72,7 +72,7 @@ impl ServiceProvider for MockServices {
 // Compile and exercise the process boundary on Windows too, using only fixture
 // commands in tests. The public real provider is exported only on Linux.
 #[cfg(any(target_os = "linux", test))]
-mod native {
+pub(crate) mod native {
     use super::*;
     use std::{
         io::Read,
@@ -106,9 +106,17 @@ mod native {
             })?;
         Ok(receive)
     }
-    pub(super) fn command(
+    pub(crate) fn command(command: Command, timeout: Duration) -> Result<Vec<u8>, ProviderError> {
+        bounded_command(
+            command,
+            timeout,
+            "Comando rechazado o fallido: comprobar permisos, systemd y unidad; no se eleva privilegio",
+        )
+    }
+    pub(crate) fn bounded_command(
         mut command: Command,
         timeout: Duration,
+        failure_message: &str,
     ) -> Result<Vec<u8>, ProviderError> {
         let mut child = command
             .stdin(Stdio::null())
@@ -171,9 +179,7 @@ mod native {
                     break if status.success() {
                         Ok(output.take().unwrap_or_default())
                     } else {
-                        Err(failure(
-                            "Comando rechazado o fallido: comprobar permisos, systemd y unidad; no se eleva privilegio",
-                        ))
+                        Err(failure(failure_message))
                     };
                 }
                 Err(_) => {

@@ -1,6 +1,9 @@
-use crate::service_worker::ServiceWorker;
+use crate::action_worker::ActionWorker;
 use serverui_core::domain::{ProviderError, Sample, SystemProvider};
-use serverui_core::services::{ServiceProvider, ServiceRequest, ServiceResult};
+use serverui_core::{
+    packages::{PackageData, PackageProgress, PackageProvider, PackageRequest, PackageResult},
+    services::{ServiceData, ServiceProvider, ServiceRequest, ServiceResult},
+};
 use std::{
     io,
     panic::{AssertUnwindSafe, catch_unwind},
@@ -24,13 +27,26 @@ pub trait SampleSource {
     fn service_take(&mut self) -> Option<(ServiceRequest, ServiceResult)> {
         None
     }
+    fn package_request(&mut self, _: PackageRequest) -> Result<bool, ProviderError> {
+        Err(ProviderError::Unavailable("APT no disponible".into()))
+    }
+    fn package_take(&mut self) -> Option<PackageResult> {
+        None
+    }
+    fn package_progress(&mut self) -> Option<PackageProgress> {
+        None
+    }
 }
 
 pub type ServiceFactory = Box<dyn FnOnce() -> Box<dyn ServiceProvider> + Send>;
+pub type PackageFactory = Box<dyn FnOnce() -> Box<dyn PackageProvider> + Send>;
 
 pub struct Sampler {
     pub service_factory: Option<ServiceFactory>,
-    services: Option<ServiceWorker>,
+    services: Option<ActionWorker<ServiceRequest, ServiceData>>,
+    pub package_factory: Option<PackageFactory>,
+    packages: Option<ActionWorker<PackageRequest, PackageData>>,
+    progress: Option<Receiver<PackageProgress>>,
     requests: SyncSender<()>,
     results: Receiver<Sample>,
     cancelled: Arc<AtomicBool>,
@@ -85,6 +101,9 @@ impl Sampler {
         Ok(Self {
             services: None,
             service_factory: None,
+            package_factory: None,
+            packages: None,
+            progress: None,
             requests,
             results,
             cancelled,
@@ -98,14 +117,51 @@ impl SampleSource for Sampler {
         if self.services.is_none()
             && let Some(factory) = self.service_factory.take()
         {
-            self.services = Some(ServiceWorker::spawn(factory).map_err(|_| {
-                ProviderError::Unavailable("No se pudo iniciar worker de servicios".into())
-            })?);
+            self.services = Some(
+                ActionWorker::spawn("Worker de servicios", move || {
+                    let mut provider = factory();
+                    Box::new(move |request| provider.perform(request))
+                })
+                .map_err(|_| {
+                    ProviderError::Unavailable("No se pudo iniciar worker de servicios".into())
+                })?,
+            );
         }
         self.services.as_mut().ok_or_else(stopped)?.request(request)
     }
     fn service_take(&mut self) -> Option<(ServiceRequest, ServiceResult)> {
         self.services.as_mut()?.take()
+    }
+    fn package_request(&mut self, request: PackageRequest) -> Result<bool, ProviderError> {
+        if self.packages.is_none()
+            && let Some(factory) = self.package_factory.take()
+        {
+            let (output, progress) = mpsc::sync_channel(1);
+            self.packages = Some(
+                ActionWorker::spawn("Worker de APT", move || {
+                    let mut provider = factory();
+                    Box::new(move |request| {
+                        provider.perform(request, &mut |state| {
+                            let _ = output.try_send(state);
+                        })
+                    })
+                })
+                .map_err(|_| {
+                    ProviderError::Unavailable("No se pudo iniciar worker de APT".into())
+                })?,
+            );
+            self.progress = Some(progress);
+        }
+        self.packages
+            .as_mut()
+            .ok_or_else(|| ProviderError::Unavailable("APT no disponible".into()))?
+            .request(request)
+    }
+    fn package_take(&mut self) -> Option<PackageResult> {
+        self.packages.as_mut()?.take().map(|(_, result)| result)
+    }
+    fn package_progress(&mut self) -> Option<PackageProgress> {
+        self.progress.as_ref()?.try_recv().ok()
     }
     fn request(&mut self) -> Result<bool, ProviderError> {
         if self.pending {

@@ -1,6 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use serverui_core::{
     application::{Action, App, Section},
+    packages::PackageOperation,
     services::ServiceOperation,
 };
 
@@ -11,7 +12,9 @@ pub fn action_for_app(key: KeyEvent, app: &App) -> Option<Action> {
     if key.modifiers.contains(KeyModifiers::CONTROL) {
         return match key.code {
             KeyCode::Char('c' | 'C') => Some(Action::Quit),
-            KeyCode::Char('u') if app.editing_filter || app.services.editing => {
+            KeyCode::Char('u')
+                if app.editing_filter || app.services.editing || app.packages.editing =>
+            {
                 Some(Action::ClearFilter)
             }
             _ => None,
@@ -23,6 +26,16 @@ pub fn action_for_app(key: KeyEvent, app: &App) -> Option<Action> {
     {
         return None;
     }
+    if app.section == Section::Packages && app.packages.confirmation.is_some() && !app.help {
+        return match key.code {
+            KeyCode::Char('y') if key.kind == KeyEventKind::Press => Some(Action::PackageConfirm),
+            KeyCode::Esc | KeyCode::Char('n') => Some(Action::Close),
+            KeyCode::Char('q') => Some(Action::Quit),
+            KeyCode::Char('j') | KeyCode::Down => Some(Action::NextRow),
+            KeyCode::Char('k') | KeyCode::Up => Some(Action::PreviousRow),
+            _ => None,
+        };
+    }
     if app.section == Section::Services && app.services.confirmation.is_some() && !app.help {
         return match key.code {
             KeyCode::Char('y') if key.kind == KeyEventKind::Press => Some(Action::ServiceConfirm),
@@ -33,7 +46,9 @@ pub fn action_for_app(key: KeyEvent, app: &App) -> Option<Action> {
             _ => None,
         };
     }
-    if (app.editing_filter || (app.section == Section::Services && app.services.editing))
+    if (app.editing_filter
+        || (app.section == Section::Services && app.services.editing)
+        || (app.section == Section::Packages && app.packages.editing))
         && !app.help
     {
         return match key.code {
@@ -43,6 +58,20 @@ pub fn action_for_app(key: KeyEvent, app: &App) -> Option<Action> {
             KeyCode::Char(c) => Some(Action::FilterInput(c)),
             _ => None,
         };
+    }
+    if app.section == Section::Packages && !app.help {
+        if key.code == KeyCode::Char('b') {
+            return Some(Action::PackageUndo);
+        }
+        let operation = match key.code {
+            KeyCode::Char('i') => Some(PackageOperation::Install),
+            KeyCode::Char('u') => Some(PackageOperation::Upgrade),
+            KeyCode::Char('d') => Some(PackageOperation::Remove),
+            _ => None,
+        };
+        if let Some(operation) = operation {
+            return Some(Action::PackagePropose(operation));
+        }
     }
     if app.section == Section::Services && !app.help {
         if key.code == KeyCode::Char('h') {
@@ -70,6 +99,7 @@ pub fn action_for_app(key: KeyEvent, app: &App) -> Option<Action> {
         KeyCode::Char('2') => Some(Action::Select(Section::Processes)),
         KeyCode::Char('3') => Some(Action::Select(Section::Services)),
         KeyCode::Char('4') => Some(Action::Select(Section::Settings)),
+        KeyCode::Char('5') => Some(Action::Select(Section::Packages)),
         KeyCode::Char('r') => Some(Action::Refresh),
         KeyCode::Down | KeyCode::Char('j') => Some(Action::NextRow),
         KeyCode::Up | KeyCode::Char('k') => Some(Action::PreviousRow),
