@@ -41,8 +41,9 @@ fn container_command(request: &InfrastructureRequest) -> Option<(Engine, Command
                 "--no-trunc",
                 "--format",
                 match engine {
-                    Engine::Docker => "{{.ID}}\t{{.Names}}\t{{.State}}",
-                    Engine::Podman => "{{.ID}}\t{{.Names}}\t{{.Status}}",
+                    Engine::Docker => "{{.ID}}|{{.Names}}|{{.State}}",
+                    // Podman 3.4 expands tabs through its table writer.
+                    Engine::Podman => "{{.ID}}|{{.Names}}|{{.Status}}",
                 },
             ],
             QUERY_TIMEOUT,
@@ -99,7 +100,7 @@ fn parse_containers(text: &str) -> InfrastructureData {
             limited = true;
             break;
         }
-        let mut fields = line.splitn(3, '\t');
+        let mut fields = line.splitn(3, '|');
         let (Some(id), Some(name), Some(state)) = (
             fields.next().and_then(ContainerId::parse),
             fields.next(),
@@ -305,12 +306,13 @@ mod tests {
 
     #[test]
     fn list_rejects_abbreviated_container_ids() {
-        let raw = format!("1234\tshort\texited\n{}\tweb\trunning", "a".repeat(64));
+        let raw = format!("1234|short|exited\n{}|web|Up 2 seconds ago", "a".repeat(64));
         let InfrastructureData::Containers(rows, limited) = parse_containers(&raw) else {
             panic!("container list");
         };
         assert!(limited);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].name, "web");
+        assert_eq!(rows[0].state, "Up 2 seconds ago");
     }
 }

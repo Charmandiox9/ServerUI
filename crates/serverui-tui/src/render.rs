@@ -96,9 +96,13 @@ fn status(app: &App, options: DisplayOptions) -> String {
     }
 }
 
+pub fn supports_full_tui(width: u16, height: u16) -> bool {
+    width >= 40 && height >= 12
+}
+
 pub fn draw(frame: &mut Frame, app: &App, options: DisplayOptions) {
     let area = frame.area();
-    if area.width < 40 || area.height < 12 {
+    if !supports_full_tui(area.width, area.height) {
         frame.render_widget(
             Paragraph::new(format!("{}: minimo 40x12. q: salir", app.mode.label())),
             area,

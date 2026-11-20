@@ -5,7 +5,7 @@ use serverui_core::{
     domain::ProviderMode,
     infrastructure::InfrastructureRequest,
 };
-use serverui_tui::input::action_for_app;
+use serverui_tui::{input::action_for_app, render::supports_full_tui};
 use std::{
     io,
     sync::mpsc::{self, Receiver, RecvTimeoutError},
@@ -16,6 +16,7 @@ const RESULT_POLL: Duration = Duration::from_millis(50);
 trait EventSource {
     fn now(&self) -> Duration;
     fn next(&mut self, timeout: Duration) -> io::Result<Option<Event>>;
+    fn confirmation_visible(&self) -> bool;
 }
 pub struct TerminalEvents {
     start: Instant,
@@ -57,6 +58,9 @@ impl EventSource for TerminalEvents {
                 Err(io::Error::other("El lector de teclado termino"))
             }
         }
+    }
+    fn confirmation_visible(&self) -> bool {
+        crossterm::terminal::size().is_ok_and(|(width, height)| supports_full_tui(width, height))
     }
 }
 pub fn run(
@@ -116,10 +120,25 @@ fn run_loop(
         match events.next(timeout)? {
             Some(Event::Key(key)) => {
                 if let Some(action) = action_for_app(key, &app) {
-                    dirty |= apply(&mut app, action, source);
+                    // Resize notifications can lag behind queued keys.
+                    if matches!(
+                        action,
+                        Action::ServiceConfirm | Action::PackageConfirm | Action::ContainerConfirm
+                    ) && !events.confirmation_visible()
+                    {
+                        app.cancel_confirmations();
+                        dirty = true;
+                    } else {
+                        dirty |= apply(&mut app, action, source);
+                    }
                 }
             }
-            Some(Event::Resize(_, _)) => dirty = true,
+            Some(Event::Resize(width, height)) => {
+                if !supports_full_tui(width, height) {
+                    app.cancel_confirmations();
+                }
+                dirty = true;
+            }
             _ => {}
         }
     }
@@ -196,6 +215,9 @@ mod tests {
             let result = event.take();
             self.queue.pop_front();
             Ok(result)
+        }
+        fn confirmation_visible(&self) -> bool {
+            true
         }
     }
     struct Source {

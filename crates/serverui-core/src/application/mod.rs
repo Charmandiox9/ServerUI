@@ -177,6 +177,12 @@ impl App {
         }
     }
 
+    pub fn cancel_confirmations(&mut self) {
+        self.services.confirmation = None;
+        self.packages.confirmation = None;
+        self.infrastructure.confirmation = None;
+    }
+
     pub fn update(&mut self, action: Action) -> Option<Effect> {
         if self.section == Section::Containers && !self.help && action != Action::Quit {
             return self.update_containers(action);
