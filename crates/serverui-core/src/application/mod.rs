@@ -1,4 +1,7 @@
 use crate::domain::{ProcessId, ProcessInfo, ProviderError, ProviderMode, Sample, Snapshot};
+use crate::infrastructure::{
+    ContainerChange, ContainerOperation, Infrastructure, InfrastructureRequest, InventoryView,
+};
 use crate::packages::{PackageOperation, PackageRequest, Packages};
 use crate::services::{ServiceOperation, ServiceRequest, Services};
 use std::{cmp::Ordering, sync::Arc};
@@ -11,14 +14,18 @@ pub enum Section {
     Services,
     Settings,
     Packages,
+    Containers,
+    Inventory,
 }
 impl Section {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 7] = [
         Self::Dashboard,
         Self::Processes,
         Self::Services,
         Self::Settings,
         Self::Packages,
+        Self::Containers,
+        Self::Inventory,
     ];
     pub fn index(self) -> usize {
         match self {
@@ -27,6 +34,8 @@ impl Section {
             Self::Services => 2,
             Self::Settings => 3,
             Self::Packages => 4,
+            Self::Containers => 5,
+            Self::Inventory => 6,
         }
     }
     pub fn label(self) -> &'static str {
@@ -36,6 +45,8 @@ impl Section {
             Self::Services => "Servicios",
             Self::Settings => "Ajustes",
             Self::Packages => "Paquetes",
+            Self::Containers => "Contenedores",
+            Self::Inventory => "Red y discos",
         }
     }
 }
@@ -103,18 +114,24 @@ pub enum Action {
     PackagePropose(PackageOperation),
     PackageConfirm,
     PackageUndo,
+    ContainerPropose(ContainerOperation),
+    ContainerConfirm,
+    SwitchEngine,
+    InventoryView(InventoryView),
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Effect {
     QuerySnapshot,
     Service(ServiceRequest),
     Package(PackageRequest),
+    Infrastructure(InfrastructureRequest),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct App {
     pub services: Services,
     pub packages: Packages,
+    pub infrastructure: Infrastructure,
     pub mode: ProviderMode,
     pub section: Section,
     pub help: bool,
@@ -141,6 +158,7 @@ impl App {
         Self {
             services: Services::default(),
             packages: Packages::default(),
+            infrastructure: Infrastructure::default(),
             mode,
             section: Section::Dashboard,
             help: false,
@@ -160,6 +178,54 @@ impl App {
     }
 
     pub fn update(&mut self, action: Action) -> Option<Effect> {
+        if self.section == Section::Containers && !self.help && action != Action::Quit {
+            return self.update_containers(action);
+        }
+        if self.section == Section::Inventory && !self.help {
+            match action {
+                Action::InventoryView(view) => {
+                    self.infrastructure.view = view;
+                    self.infrastructure.inventory_scroll = 0;
+                    return None;
+                }
+                Action::NextRow | Action::PreviousRow => {
+                    let delta = if action == Action::NextRow { 1 } else { -1 };
+                    let state = &mut self.infrastructure;
+                    let maximum = match state.view {
+                        InventoryView::Mounts => {
+                            self.snapshot.as_ref().map_or(0, |s| s.disks.len())
+                        }
+                        InventoryView::Network => state
+                            .inventory
+                            .as_ref()
+                            .and_then(|s| s.interfaces.as_ref().ok())
+                            .map_or(0, Vec::len),
+                        InventoryView::Devices => state
+                            .inventory
+                            .as_ref()
+                            .and_then(|s| s.devices.as_ref().ok())
+                            .map_or(0, Vec::len),
+                    }
+                    .saturating_sub(1);
+                    state.inventory_scroll = state
+                        .inventory_scroll
+                        .saturating_add_signed(delta)
+                        .min(maximum);
+                    return None;
+                }
+                Action::Refresh => {
+                    if self.infrastructure.view == InventoryView::Mounts {
+                        return Some(Effect::QuerySnapshot);
+                    }
+                    return self
+                        .infrastructure
+                        .busy
+                        .is_none()
+                        .then_some(Effect::Infrastructure(InfrastructureRequest::Inventory));
+                }
+                _ => {}
+            }
+        }
         if action == Action::Quit && matches!(self.packages.busy, Some(PackageRequest::Apply(_))) {
             self.help = false;
             self.select_section(Section::Packages);
@@ -337,6 +403,87 @@ impl App {
         self.update_general(action)
     }
 
+    fn update_containers(&mut self, action: Action) -> Option<Effect> {
+        let state = &mut self.infrastructure;
+        if state.confirmation.is_some() {
+            return match action {
+                Action::Close => {
+                    state.close_container_detail();
+                    None
+                }
+                Action::ContainerConfirm => state
+                    .confirmation
+                    .take()
+                    .map(InfrastructureRequest::Change)
+                    .map(Effect::Infrastructure),
+                _ => None,
+            };
+        }
+        let request = match action {
+            Action::Close => {
+                state.close_container_detail();
+                return None;
+            }
+            Action::NextRow | Action::PreviousRow => {
+                let delta = if action == Action::NextRow { 1 } else { -1 };
+                if let Some((_, logs)) = &state.logs {
+                    state.container_scroll = state
+                        .container_scroll
+                        .saturating_add_signed(delta)
+                        .min(logs.len().saturating_sub(1));
+                } else {
+                    state.selected = state
+                        .selected
+                        .saturating_add_signed(delta)
+                        .min(state.rows.len().saturating_sub(1));
+                }
+                return None;
+            }
+            Action::SwitchEngine if state.busy.is_none() => {
+                state.switch_engine();
+                Some(InfrastructureRequest::List(state.engine))
+            }
+            Action::Refresh if state.busy.is_none() => Some(match &state.logs {
+                Some((id, _)) => InfrastructureRequest::Logs(state.engine, id.clone()),
+                None => InfrastructureRequest::List(state.engine),
+            }),
+            Action::Inspect if state.busy.is_none() && state.logs.is_none() => state
+                .rows
+                .get(state.selected)
+                .map(|row| InfrastructureRequest::Logs(state.engine, row.id.clone())),
+            Action::ContainerPropose(operation) if state.busy.is_none() && state.logs.is_none() => {
+                state.confirmation =
+                    state
+                        .rows
+                        .get(state.selected)
+                        .cloned()
+                        .map(|container| ContainerChange {
+                            engine: state.engine,
+                            container,
+                            operation,
+                        });
+                return None;
+            }
+            Action::Refresh => return None,
+            _ => return self.update_general(action),
+        };
+        request.map(Effect::Infrastructure)
+    }
+
+    pub fn infrastructure_on_entry(&self) -> Option<InfrastructureRequest> {
+        let state = &self.infrastructure;
+        if self.help || state.busy.is_some() {
+            return None;
+        }
+        match self.section {
+            Section::Containers if !state.listed => Some(InfrastructureRequest::List(state.engine)),
+            Section::Inventory if state.inventory.is_none() && state.inventory_error.is_none() => {
+                Some(InfrastructureRequest::Inventory)
+            }
+            _ => None,
+        }
+    }
+
     fn update_general(&mut self, action: Action) -> Option<Effect> {
         let count = Section::ALL.len();
         match action {
@@ -417,7 +564,11 @@ impl App {
             | Action::ServiceHistory
             | Action::PackageConfirm
             | Action::PackageUndo
-            | Action::PackagePropose(_) => {}
+            | Action::PackagePropose(_)
+            | Action::ContainerPropose(_)
+            | Action::ContainerConfirm
+            | Action::SwitchEngine
+            | Action::InventoryView(_) => {}
         }
         if self.section == Section::Services
             && !self.services.loaded
@@ -435,6 +586,16 @@ impl App {
         {
             return Some(Effect::Package(PackageRequest::Recommendations));
         }
+        if matches!(
+            action,
+            Action::Select(_)
+                | Action::Next
+                | Action::Previous
+                | Action::ToggleHelp
+                | Action::Close
+        ) {
+            return self.infrastructure_on_entry().map(Effect::Infrastructure);
+        }
         None
     }
 
@@ -443,6 +604,9 @@ impl App {
         self.services.confirmation = None;
         if self.section == Section::Packages && section != Section::Packages {
             self.packages.close();
+        }
+        if self.section == Section::Containers && section != Section::Containers {
+            self.infrastructure.close_container_detail();
         }
         self.section = section;
         self.editing_filter = false;
@@ -629,7 +793,7 @@ mod tests {
     fn navigation_and_help() {
         let mut a = App::default();
         a.update(Action::Previous);
-        assert_eq!(a.section, Section::Packages);
+        assert_eq!(a.section, Section::Inventory);
         a.update(Action::Next);
         assert_eq!(a.section, Section::Dashboard);
         a.update(Action::ToggleHelp);

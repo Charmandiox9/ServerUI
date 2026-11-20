@@ -1,4 +1,4 @@
-name: Stage 3
+name: Stage 4
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: stage-3-${{ github.ref }}
+  group: stage-4-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -65,6 +65,9 @@ jobs:
       - name: APT demo and confirmations
         if: runner.os == 'Linux'
         run: python3 scripts/apt_smoke.py target/release/serverui
+      - name: Infrastructure demo and confirmations
+        if: runner.os == 'Linux'
+        run: python3 scripts/infrastructure_smoke.py target/release/serverui
       - name: Idle CPU and response regression
         if: runner.os == 'Linux'
         run: python3 scripts/benchmark_demo.py target/release/serverui --seconds 15
@@ -89,6 +92,14 @@ jobs:
           --env SERVERUI_APT_SANDBOX=disposable
           --mount "type=bind,source=$GITHUB_WORKSPACE,target=/workspace,readonly"
           serverui-ssh-smoke:ci python3 /workspace/scripts/apt_smoke.py
+          /workspace/target/release/serverui --sandbox
+      - name: Container command fixtures and live inventory
+        if: runner.os == 'Linux'
+        run: >-
+          docker run --rm --network none --cap-drop ALL
+          --security-opt no-new-privileges --env SERVERUI_INFRA_SANDBOX=disposable
+          --mount "type=bind,source=$GITHUB_WORKSPACE,target=/workspace,readonly"
+          serverui-ssh-smoke:ci python3 /workspace/scripts/infrastructure_smoke.py
           /workspace/target/release/serverui --sandbox
       - name: Package verified release binary
         run: python scripts/package_release.py ${{ matrix.binary }} --target ${{ matrix.target }}

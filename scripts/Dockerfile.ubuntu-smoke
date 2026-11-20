@@ -1,7 +1,7 @@
 # Development-only SSH validation environment; never part of the application.
 FROM ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8
 RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends openssh-server openssh-client python3 \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends openssh-server openssh-client iproute2 python3 \
     && useradd --create-home --shell /bin/sh serverui-test \
     && passwd -d serverui-test \
     && mkdir -p /run/sshd

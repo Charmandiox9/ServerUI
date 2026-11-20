@@ -3,6 +3,7 @@ use crossterm::event::{self, Event};
 use serverui_core::{
     application::{Action, App, Effect},
     domain::ProviderMode,
+    infrastructure::InfrastructureRequest,
 };
 use serverui_tui::input::action_for_app;
 use std::{
@@ -97,6 +98,12 @@ fn run_loop(
         if let Some(reply) = source.package_take() {
             app.packages.receive(reply);
         }
+        if let Some((request, reply)) = source.infrastructure_take() {
+            app.infrastructure.receive(request, reply);
+            if let Some(request) = app.infrastructure_on_entry() {
+                request_infrastructure(&mut app, source, request);
+            }
+        }
         if let Some(reply) = source.take() {
             app.receive(reply);
         }
@@ -135,9 +142,21 @@ fn apply(app: &mut App, action: Action, source: &mut impl SampleSource) -> bool 
             Ok(false) => {}
             Err(error) => app.packages.receive(Err(error)),
         },
+        Some(Effect::Infrastructure(request)) => request_infrastructure(app, source, request),
         None => {}
     }
     *app != before
+}
+fn request_infrastructure(
+    app: &mut App,
+    source: &mut impl SampleSource,
+    request: InfrastructureRequest,
+) {
+    match source.infrastructure_request(request.clone()) {
+        Ok(true) => app.infrastructure.started(request),
+        Ok(false) => {}
+        Err(error) => app.infrastructure.receive(request, Err(error)),
+    }
 }
 fn request_snapshot(app: &mut App, source: &mut impl SampleSource) {
     match source.request() {

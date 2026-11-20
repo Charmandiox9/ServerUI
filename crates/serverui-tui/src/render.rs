@@ -9,6 +9,7 @@ use serverui_core::{
     application::{App, DataStatus, Section},
     domain::ProviderMode,
 };
+mod infrastructure;
 mod packages;
 
 #[derive(Debug, Clone, Copy)]
@@ -81,6 +82,8 @@ fn status(app: &App, options: DisplayOptions) -> String {
                 "Servicios: acciones con confirmacion"
             } else if app.section == Section::Packages {
                 "APT: cambios con confirmacion"
+            } else if app.section == Section::Containers {
+                "Contenedores: cambios con confirmacion"
             } else {
                 "Datos Linux / solo lectura"
             },
@@ -102,7 +105,6 @@ pub fn draw(frame: &mut Frame, app: &App, options: DisplayOptions) {
         );
         return;
     }
-    let compact = area.width < 80 || area.height < 24;
     let accent = if options.no_color {
         Style::default()
     } else {
@@ -123,6 +125,7 @@ pub fn draw(frame: &mut Frame, app: &App, options: DisplayOptions) {
             match (app.mode, app.section) {
                 (ProviderMode::Linux, Section::Services) => "LINUX / SERVICIOS",
                 (ProviderMode::Linux, Section::Packages) => "LINUX / APT",
+                (ProviderMode::Linux, Section::Containers) => "LINUX / CONTENEDORES",
                 _ => app.mode.label(),
             }
         ))
@@ -132,13 +135,25 @@ pub fn draw(frame: &mut Frame, app: &App, options: DisplayOptions) {
     let nav: Vec<Span<'_>> = Section::ALL
         .into_iter()
         .map(|section| {
-            let label = if compact {
+            let label = if area.width < 56 {
+                match section {
+                    Section::Dashboard => "D",
+                    Section::Processes => "P",
+                    Section::Services => "S",
+                    Section::Settings => "A",
+                    Section::Packages => "T",
+                    Section::Containers => "C",
+                    Section::Inventory => "R",
+                }
+            } else if area.width < 100 {
                 match section {
                     Section::Dashboard => "Dash",
                     Section::Processes => "Proc",
                     Section::Services => "Serv",
                     Section::Settings => "Ajust",
                     Section::Packages => "APT",
+                    Section::Containers => "Cont",
+                    Section::Inventory => "Red",
                 }
             } else {
                 section.label()
@@ -200,9 +215,23 @@ pub fn draw(frame: &mut Frame, app: &App, options: DisplayOptions) {
                     Line::from("APT requiere autorizacion puntual"),
                     Line::from("Tab: seccion | q: salir al terminar"),
                 ]
+            } else if app.section == Section::Containers {
+                vec![
+                    Line::from("e: Docker/Podman | r: consultar"),
+                    Line::from("j/k: elegir | Enter: logs | Esc: volver"),
+                    Line::from("a: iniciar | d: parar | R: reiniciar"),
+                    Line::from("y: confirmar | n/Esc: cancelar"),
+                    Line::from("La operacion usa permisos existentes"),
+                ]
+            } else if app.section == Section::Inventory {
+                vec![
+                    Line::from("n: red | b: bloques | m: montajes"),
+                    Line::from("j/k: desplazar | r: actualizar"),
+                    Line::from("Inventario de solo lectura"),
+                ]
             } else {
                 vec![
-                    Line::from("Tab/Shift+Tab/flechas: seccion; 1-5"),
+                    Line::from("Tab/Shift+Tab/flechas: seccion; 1-7"),
                     Line::from("Arriba/abajo: fila/disco; Enter: detalle"),
                     Line::from("/: filtro | s: orden | S: invertir"),
                     Line::from("r: refrescar | Esc: volver/cerrar"),
@@ -250,6 +279,10 @@ pub fn draw(frame: &mut Frame, app: &App, options: DisplayOptions) {
         services(frame, inner, app, options, accent);
     } else if app.section == Section::Packages {
         packages::draw(frame, inner, &app.packages, options, accent);
+    } else if app.section == Section::Containers {
+        infrastructure::containers(frame, inner, &app.infrastructure, options, accent);
+    } else if app.section == Section::Inventory {
+        infrastructure::inventory(frame, inner, app, options, accent);
     } else if app.section == Section::Dashboard {
         dashboard(frame, inner, app, options, accent);
     } else if app.section == Section::Processes {
@@ -262,6 +295,10 @@ pub fn draw(frame: &mut Frame, app: &App, options: DisplayOptions) {
     }
     let footer = if app.section == Section::Packages {
         packages::footer(&app.packages)
+    } else if app.section == Section::Containers {
+        infrastructure::container_footer(&app.infrastructure)
+    } else if app.section == Section::Inventory {
+        "n:red b:bloques m:montajes r:actualizar"
     } else if app.section == Section::Services && app.services.confirmation.is_some() {
         "y: confirmar | n/Esc: cancelar | q: salir"
     } else if app.section == Section::Services && app.services.editing {
@@ -722,7 +759,9 @@ fn content(app: &App, options: DisplayOptions) -> Vec<Line<'static>> {
             }
             lines
         }
-        Section::Processes | Section::Packages => Vec::new(),
+        Section::Processes | Section::Packages | Section::Containers | Section::Inventory => {
+            Vec::new()
+        }
     }
 }
 
@@ -777,6 +816,40 @@ mod tests {
         assert!(screen(&app, 40, 12)?.contains("Sin acciones ejecutadas"));
         Ok(())
     }
+    #[test]
+    fn compact_container_confirmation_shows_engine_and_full_id() -> Result<(), Infallible> {
+        use serverui_core::infrastructure::{
+            Container, ContainerChange, ContainerId, ContainerOperation, Engine,
+        };
+        let mut app = App {
+            section: Section::Containers,
+            ..App::default()
+        };
+        let id = ContainerId::parse(&"a".repeat(64)).unwrap_or_else(|| panic!("fixture"));
+        app.infrastructure.confirmation = Some(ContainerChange {
+            engine: Engine::Podman,
+            operation: ContainerOperation::Stop,
+            container: Container {
+                id,
+                name: "fixture\x1b".into(),
+                state: "running".into(),
+            },
+        });
+        let output = screen(&app, 40, 12)?;
+        assert!(output.contains("Detener (Podman)"));
+        assert!(output.contains("y: confirmar"));
+        assert!(!output.contains('\x1b'));
+        assert_eq!(
+            output
+                .split(|c| c != 'a')
+                .filter(|part| part.len() >= 8)
+                .map(str::len)
+                .sum::<usize>(),
+            64
+        );
+        Ok(())
+    }
+
     fn screen(app: &App, width: u16, height: u16) -> Result<String, Infallible> {
         let mut terminal = Terminal::new(TestBackend::new(width, height))?;
         terminal.draw(|f| {

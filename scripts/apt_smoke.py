@@ -19,7 +19,7 @@ FIXTURE = "serverui-apt-fixture"
 PKEXEC = Path("/usr/bin/pkexec")
 
 
-def terminal(binary, demo, exercise):
+def terminal(binary, demo, exercise, entry=(b"5", "Recomendados APT")):
     master, slave = pty.openpty()
     try:
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
@@ -52,14 +52,14 @@ def terminal(binary, demo, exercise):
 
         try:
             send(b"", "RAM:")
-            send(b"5", "Recomendados APT")
+            send(*entry)
             exercise(send)
             os.write(master, b"q")
             deadline = time.monotonic() + 5
             while child.poll() is None and time.monotonic() < deadline:
                 pump()
             pump()
-            assert child.poll() == 0, "APT screen did not exit"
+            assert child.poll() == 0, "ServerUI did not exit"
             assert termios.tcgetattr(slave) == before
             assert b"\x1b[?1049l" in captured and b"\x1b[?25h" in captured
         finally:

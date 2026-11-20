@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.5.0 — 2026-11-20
+
+- Contenedores Docker y Podman locales con lista, logs, inicio, detención y
+  reinicio vinculados al ID completo y con confirmación.
+- Inventario en solo lectura de interfaces, direcciones IP, dispositivos de
+  bloque, montajes y capacidad.
+- Demo de ambos motores y validación PTY del adaptador con comandos desechables.
+
 ## v0.4.0 — 2026-11-19
 
 - Pestaña Paquetes con búsqueda local por nombre, instalación, actualización de

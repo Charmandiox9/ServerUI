@@ -1,6 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use serverui_core::{
     application::{Action, App, Section},
+    infrastructure::{ContainerOperation, InventoryView},
     packages::PackageOperation,
     services::ServiceOperation,
 };
@@ -35,6 +36,39 @@ pub fn action_for_app(key: KeyEvent, app: &App) -> Option<Action> {
             KeyCode::Char('k') | KeyCode::Up => Some(Action::PreviousRow),
             _ => None,
         };
+    }
+    if app.section == Section::Containers && !app.help {
+        if app.infrastructure.confirmation.is_some() {
+            return match key.code {
+                KeyCode::Char('y') if key.kind == KeyEventKind::Press => {
+                    Some(Action::ContainerConfirm)
+                }
+                KeyCode::Esc | KeyCode::Char('n') => Some(Action::Close),
+                KeyCode::Char('q') => Some(Action::Quit),
+                _ => None,
+            };
+        }
+        let action = match key.code {
+            KeyCode::Char('a') => Some(Action::ContainerPropose(ContainerOperation::Start)),
+            KeyCode::Char('d') => Some(Action::ContainerPropose(ContainerOperation::Stop)),
+            KeyCode::Char('R') => Some(Action::ContainerPropose(ContainerOperation::Restart)),
+            KeyCode::Char('e') => Some(Action::SwitchEngine),
+            _ => None,
+        };
+        if action.is_some() {
+            return action;
+        }
+    }
+    if app.section == Section::Inventory && !app.help {
+        let view = match key.code {
+            KeyCode::Char('n') => Some(InventoryView::Network),
+            KeyCode::Char('b') => Some(InventoryView::Devices),
+            KeyCode::Char('m') => Some(InventoryView::Mounts),
+            _ => None,
+        };
+        if let Some(view) = view {
+            return Some(Action::InventoryView(view));
+        }
     }
     if app.section == Section::Services && app.services.confirmation.is_some() && !app.help {
         return match key.code {
@@ -100,6 +134,8 @@ pub fn action_for_app(key: KeyEvent, app: &App) -> Option<Action> {
         KeyCode::Char('3') => Some(Action::Select(Section::Services)),
         KeyCode::Char('4') => Some(Action::Select(Section::Settings)),
         KeyCode::Char('5') => Some(Action::Select(Section::Packages)),
+        KeyCode::Char('6') => Some(Action::Select(Section::Containers)),
+        KeyCode::Char('7') => Some(Action::Select(Section::Inventory)),
         KeyCode::Char('r') => Some(Action::Refresh),
         KeyCode::Down | KeyCode::Char('j') => Some(Action::NextRow),
         KeyCode::Up | KeyCode::Char('k') => Some(Action::PreviousRow),

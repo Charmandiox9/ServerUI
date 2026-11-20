@@ -1,14 +1,14 @@
 # ServerUI
 
 Administración visual de Ubuntu Server desde la terminal, construida en Rust.
-**Stage 3 / v0.4.0 con gestión de paquetes APT.**
-Dashboard y procesos ofrecen consultas de solo lectura. Servicios y Paquetes
+**Stage 4 / v0.5.0 con contenedores, red y discos.**
+Dashboard y procesos ofrecen consultas de solo lectura. Servicios, Paquetes y Contenedores
 ofrecen acciones con confirmación explícita. Ejecuta la TUI como usuario normal.
 
-La [release v0.4.0](https://github.com/Charmandiox9/ServerUI/releases/tag/v0.4.0)
+La [release v0.5.0](https://github.com/Charmandiox9/ServerUI/releases/tag/v0.5.0)
 incluye binarios x86_64 Linux GNU y Windows MSVC, más checksums SHA-256. Linux
 permite el modo real y la demo. Windows incluye la demo. Las releases v0.1.0,
-v0.2.0 y v0.3.0 corresponden a los Stages 0, 1 y 2. La licencia open source sigue pendiente de elección;
+v0.2.0, v0.3.0 y v0.4.0 corresponden a los Stages 0 a 3. La licencia open source sigue pendiente de elección;
 no se incluye una por inferencia.
 
 Para instalar en Ubuntu Server 22.04 x86_64, seguir
@@ -55,7 +55,7 @@ También se respeta NO_COLOR no vacío. Los estados se identifican con texto.
 | Tecla | Acción |
 | --- | --- |
 | Tab / Shift+Tab / izquierda / derecha | Cambiar sección |
-| 1–5 | Dashboard, Procesos, Servicios, Ajustes, Paquetes |
+| 1–7 | Dashboard, Procesos, Servicios, Ajustes, Paquetes, Contenedores, Red y discos |
 | Arriba/abajo o j/k | Seleccionar proceso; desplazar montajes en Dashboard |
 | Home / End | Primera/última fila o montaje |
 | / | Editar filtro de procesos por nombre o PID |
@@ -143,6 +143,24 @@ simulación para retirarlo. Los scripts de instalación pueden dejar efectos
 propios y las actualizaciones no ofrecen downgrade automático. Ante una
 interrupción, comprueba con `dpkg --audit` y revisa el estado antes de repetir.
 [Aceptación y límites de Stage 3](docs/ACCEPTANCE_STAGE_3.md).
+
+## Contenedores, red y discos (Stage 4)
+
+Pulsa `6` para abrir Contenedores. `e` alterna entre Docker y Podman, `j/k`
+elige el contenedor y Enter abre una captura de logs. `r` actualiza la lista
+o los logs. `a`, `d` y `R` proponen iniciar, detener y reiniciar.
+Revisa el motor y el contenedor que se muestran antes de confirmar con `y`.
+`n/Esc` cancela. La detención y el reinicio pueden interrumpir el servicio.
+
+Docker usa `/var/run/docker.sock` con los permisos existentes, y Podman usa
+el almacenamiento local del usuario. Los clientes se buscan en `/usr/bin`.
+La demo simula ambos motores, así como sus logs y cambios de estado.
+
+Pulsa `7` para abrir Red y discos. `n` muestra interfaces y direcciones,
+`b` muestra los dispositivos de bloque y `m` muestra los montajes con
+capacidad. `j/k` desplaza el inventario y `r` vuelve a consultar. En Linux,
+si falta `ip`, los nombres y estados de las interfaces se leen de sysfs.
+[Alcance y aceptación de Stage 4](docs/ACCEPTANCE_STAGE_4.md).
 
 ## Interpretar las métricas
 
@@ -242,8 +260,9 @@ El terminal se restaura tras salida, error y pánico con unwinding. SIGKILL,
 panic=abort, fallo del emulador o desconexión abrupta no garantizan cleanup; si
 fuera necesario usar stty sane y reset en el shell Linux.
 
-El [plan activo](docs/STAGE_3_PLAN.md) y el [ADR de APT](docs/adr/0005-apt-transactions.md)
-registran el alcance y las decisiones de Stage 3.
+El [plan activo](docs/STAGE_4_PLAN.md) y el
+[ADR de contenedores e inventario](docs/adr/0006-local-infrastructure.md)
+registran el alcance y las decisiones de Stage 4.
 
 El smoke exploratorio en la laptop física pasó para demo y funciones de lectura.
 El benchmark real inicial superó el umbral de CPU (3,98 % de un núcleo en 60 s).

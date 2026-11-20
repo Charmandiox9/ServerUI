@@ -24,7 +24,7 @@ enum DemoScenario {
 #[derive(Debug, Parser)]
 #[command(
     version,
-    about = "ServerUI: metricas, procesos, servicios systemd y paquetes APT. --demo: simulacion."
+    about = "ServerUI: metricas, procesos, systemd, APT, contenedores, red y discos. --demo: simulacion."
 )]
 struct Args {
     /// Usar datos simulados sin consultar ni modificar el host
@@ -86,6 +86,8 @@ fn start(args: Args) -> io::Result<()> {
     let mut source = sampler::Sampler::spawn(move || make_provider(args.demo, scenario))?;
     source.service_factory = Some(Box::new(move || make_services(args.demo, scenario)));
     source.package_factory = Some(Box::new(move || make_packages(args.demo, scenario)));
+    source.infrastructure_factory =
+        Some(Box::new(move || make_infrastructure(args.demo, scenario)));
     terminal::run(|terminal| {
         runner::run(
             &mut source,
@@ -100,6 +102,23 @@ fn start(args: Args) -> io::Result<()> {
         )
         .map(|_| ())
     })
+}
+
+fn make_infrastructure(
+    demo: bool,
+    scenario: Scenario,
+) -> Box<dyn serverui_core::infrastructure::InfrastructureProvider> {
+    if demo {
+        return Box::new(serverui_providers::MockInfrastructure::new(scenario));
+    }
+    #[cfg(target_os = "linux")]
+    {
+        Box::new(serverui_providers::LinuxInfrastructure)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Box::new(serverui_providers::MockInfrastructure::new(Scenario::Empty))
+    }
 }
 
 fn make_packages(
