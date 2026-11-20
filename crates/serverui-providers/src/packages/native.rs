@@ -10,7 +10,9 @@ use std::{
 };
 
 const APT_GET: &str = "/usr/bin/apt-get";
-const QUERY_TIMEOUT: Duration = Duration::from_secs(8);
+const SEARCH_TIMEOUT: Duration = Duration::from_secs(8);
+// Resolving the removal plan took over 13 seconds on Ubuntu 22.04.
+const SIMULATION_TIMEOUT: Duration = Duration::from_secs(30);
 const LINE_LIMIT: usize = 512;
 const RECOMMENDED: &[&str] = &[
     "cloudflared",
@@ -146,7 +148,7 @@ fn search(pattern: &str, exact_names: &[&str]) -> PackageResult {
         .args(["--names-only", "search", "--", pattern]);
     let output = bounded_command(
         process,
-        QUERY_TIMEOUT,
+        SEARCH_TIMEOUT,
         "No se pudo consultar la cache local de APT",
     )?;
     let text = String::from_utf8_lossy(&output);
@@ -174,7 +176,7 @@ fn preview(name: &PackageName, operation: PackageOperation) -> Result<PackagePla
         .args(apt_args(name, operation, true));
     let output = bounded_command(
         process,
-        QUERY_TIMEOUT,
+        SIMULATION_TIMEOUT,
         "APT no pudo simular. Comprueba el paquete, la cache y el estado de las dependencias",
     )?;
     parse_plan(name, operation, &String::from_utf8_lossy(&output))

@@ -6,8 +6,9 @@
 produce el plan textual de cambios `Inst`, `Conf` y `Remv`. Se aceptan nombres
 Debian ASCII validados, con destino `:native` al construir la única posición de
 paquete. La búsqueda interpreta la entrada literalmente. El límite es de 100
-resultados y 100 líneas de plan. Las lecturas tienen un plazo de 8 s y un límite
-de 256 KiB por flujo. APT conserva su resolución de dependencias y autenticación
+resultados y 100 líneas de plan. Las búsquedas tienen un plazo de 8 s y las
+simulaciones, incluidas las de confirmación, de 30 s. Ambas tienen un límite de
+256 KiB por flujo. APT conserva su resolución de dependencias y autenticación
 de repositorios configurada. La actualización individual usa `--only-upgrade`.
 
 La primera entrada a Paquetes consulta una lista curada de nombres exactos en

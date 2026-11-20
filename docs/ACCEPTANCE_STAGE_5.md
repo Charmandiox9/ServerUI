@@ -34,11 +34,25 @@ desechable. [CI del PR](https://github.com/Charmandiox9/ServerUI/actions/runs/44
 
 La evidencia previa de servicios usa el gestor de usuario por SSH con la
 excepción autorizada en Stage 2. La de APT usa apt/dpkg reales en sandbox y
-autorización simulada. Las pruebas del gestor systemd del sistema y de
-polkit real por SSH requieren un entorno aislado con permisos preparados.
+autorización simulada. La prueba del gestor systemd del sistema requiere un
+entorno aislado con permisos preparados.
 [Aceptación de servicios](ACCEPTANCE_STAGE_2.md) ·
 [Aceptación de APT](ACCEPTANCE_STAGE_3.md) ·
 [Aceptación de contenedores](ACCEPTANCE_STAGE_4.md).
+
+El 20 de noviembre de 2026, en Ubuntu 22.04 por SSH, `pkttyagent` autenticó
+la instalación de `hello` con la política existente. `dpkg-query` confirmó
+la versión `2.10-2ubuntu4`. La simulación independiente de retirada tardó
+13,371 s y solo mostró `Remv hello`, por encima del plazo anterior de 8 s.
+En el contenedor desechable de Ubuntu 22.04, una demora de 10 s antes de
+simular la retirada reprodujo el fallo con el binario anterior. Con el plazo
+de 30 s pasó el recorrido de APT, incluidos deshacer y retirar con dpkg real
+y autorización simulada.
+Con el binario corregido, ServerUI completó la retirada por SSH. APT informó
+un solo paquete eliminado, `hello`, y cero instalaciones o actualizaciones.
+Una consulta independiente con `dpkg-query -W hello` confirmó que el paquete
+volvió a quedar ausente. La cancelación real de polkit sigue pendiente de
+verificación.
 
 ## Evidencia local de v1.0.0-dev
 
