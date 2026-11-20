@@ -35,8 +35,8 @@ if operation == "list":
         if not (state / "missing").exists():
             print(container_id)
     else:
-        assert options == ["--all", "--no-trunc", "--format", "{{.ID}}\\t{{.Names}}\\t" + field]
-        print(container_id, engine + "-fixture", status.read_text(), sep="\\t")
+        assert options == ["--all", "--no-trunc", "--format", "{{.ID}}|{{.Names}}|" + field]
+        print(container_id, engine + "-fixture", status.read_text(), sep="|")
 elif operation == "logs":
     assert options == ["--tail", "80", "--", container_id]
     print(engine + " fixture stdout")

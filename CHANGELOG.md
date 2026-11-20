@@ -6,6 +6,7 @@
   mostrarlos. Verificar el tamaño real antes de enviar una acción.
 - Añadir una regresión PTY de redimensionamiento durante una confirmación,
   una prueba de Docker y Podman en una VM desechable y auditoría RustSec en CI.
+- Interpretar correctamente el listado de Podman 3.4 en Ubuntu 22.04.
 - Documentar compatibilidad, límites de permisos y criterios de publicación.
 
 ## v0.5.0 — 2026-11-20

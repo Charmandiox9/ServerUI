@@ -70,7 +70,11 @@ pub(super) fn containers(
                     .take(usize::from(area.height))
                     .map(|line| Line::from(safe_text(line, options.ascii))),
             );
-        } else if state.rows.is_empty() && state.listed && state.container_message.is_none() {
+        } else if state.rows.is_empty()
+            && state.listed
+            && !state.limited
+            && state.container_message.is_none()
+        {
             lines.push(Line::from("Sin contenedores"));
         } else {
             if state.limited {
