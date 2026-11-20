@@ -1,15 +1,14 @@
 # ServerUI
 
 Administración visual de Ubuntu Server desde la terminal, construida en Rust.
-**Stage 2 / v0.3.0: servicios systemd, logs y acciones con confirmación.**
-Dashboard y procesos conservan solo lectura. Servicios añade consultas de systemd,
-logs y acciones con confirmación explícita; alcance y aceptación documentados.
-La TUI funciona con los permisos del usuario y nunca solicita sudo.
+**Stage 3 / v0.4.0 con gestión de paquetes APT.**
+Dashboard y procesos ofrecen consultas de solo lectura. Servicios y Paquetes
+ofrecen acciones con confirmación explícita. Ejecuta la TUI como usuario normal.
 
-La [release v0.3.0](https://github.com/Charmandiox9/ServerUI/releases/tag/v0.3.0)
+La [release v0.4.0](https://github.com/Charmandiox9/ServerUI/releases/tag/v0.4.0)
 incluye binarios x86_64 Linux GNU y Windows MSVC, más checksums SHA-256. Linux
-permite lectura real y demo; Windows conserva demo. La release anterior v0.1.0
-corresponde al Stage 0; v0.2.0, al Stage 1. La licencia open source sigue pendiente de elección;
+permite el modo real y la demo. Windows incluye la demo. Las releases v0.1.0,
+v0.2.0 y v0.3.0 corresponden a los Stages 0, 1 y 2. La licencia open source sigue pendiente de elección;
 no se incluye una por inferencia.
 
 Para instalar en Ubuntu Server 22.04 x86_64, seguir
@@ -56,7 +55,7 @@ También se respeta NO_COLOR no vacío. Los estados se identifican con texto.
 | Tecla | Acción |
 | --- | --- |
 | Tab / Shift+Tab / izquierda / derecha | Cambiar sección |
-| 1–4 | Dashboard, Procesos, Servicios, Ajustes |
+| 1–5 | Dashboard, Procesos, Servicios, Ajustes, Paquetes |
 | Arriba/abajo o j/k | Seleccionar proceso; desplazar montajes en Dashboard |
 | Home / End | Primera/última fila o montaje |
 | / | Editar filtro de procesos por nombre o PID |
@@ -67,7 +66,7 @@ También se respeta NO_COLOR no vacío. Los estados se identifican con texto.
 | Escape | Cerrar ayuda o detalle |
 | r | Actualizar o reintentar |
 | ? | Abrir/cerrar ayuda |
-| q / Ctrl+C | Salir; en el filtro q es texto, Ctrl+C siempre sale |
+| q / Ctrl+C | Salir cuando APT termine. Durante la edición, q es texto |
 
 El orden recorre CPU, RAM, PID y nombre; los empates se resuelven por identidad
 para evitar saltos. La selección se conserva al actualizar y reordenar. Si el
@@ -117,6 +116,34 @@ La TUI añade barras de CPU/RAM/swap en 80×24, tabla de montajes y selección
 invertida visible sin color. Conserva modo compacto, ASCII y colores ANSI
 opcionales; no añade animaciones ni aumenta la frecuencia de renderizado.
 
+## Paquetes APT en Ubuntu (Stage 3)
+
+Abre Paquetes con `5` para ver una selección de herramientas recomendadas que
+figuran en los índices locales de APT. Pulsa `/` y escribe parte de un nombre.
+`Enter` busca y `r` repite la consulta. Envía una búsqueda vacía para volver
+a los recomendados. La demo muestra paquetes simulados.
+Selecciona con `j/k`. `i` propone instalar, `u` actualizar el paquete
+instalado a su versión candidata y `d` eliminar conservando su configuración.
+
+Revisa la simulación, incluidas las dependencias y versiones, y usa `y` para
+aplicar o `n/Esc` para cancelar. ServerUI vuelve a simular antes de ejecutar.
+La salida indica el progreso disponible y conserva las últimas 24 líneas en
+memoria. Puedes cambiar de pestaña mientras trabaja. `q/Ctrl+C` vuelve a
+Paquetes hasta que termine APT.
+
+Las consultas funcionan con permisos de usuario. Aplicar requiere
+`/usr/bin/pkexec` y autorización de la política de polkit ya configurada.
+En una sesión SSH sin agente, puedes registrar `pkttyagent --process PID` en
+una segunda terminal con el PID de ServerUI, cuando polkit y el agente estén
+disponibles. Los índices se mantienen con el flujo de administración del equipo.
+
+Si el plan instaló un único paquete nuevo y no instaló ni actualizó otros,
+`b` prepara otra
+simulación para retirarlo. Los scripts de instalación pueden dejar efectos
+propios y las actualizaciones no ofrecen downgrade automático. Ante una
+interrupción, comprueba con `dpkg --audit` y revisa el estado antes de repetir.
+[Aceptación y límites de Stage 3](docs/ACCEPTANCE_STAGE_3.md).
+
 ## Interpretar las métricas
 
 - CPU global: 0–100 %; CPU de procesos: 100 % representa un núcleo lógico y puede
@@ -140,9 +167,8 @@ opcionales; no añade animaciones ni aumenta la frecuencia de renderizado.
 
 No se leen argumentos, entorno, rutas de ejecutables, GPU ni tareas/hilos por
 proceso. Los nombres, montajes y errores se neutralizan antes de renderizar.
-No hay kill, renice, APT ni administración de red/discos. La configuración de
-ServerUI y el historial no se escriben a disco. Las acciones sobre servicios son
-las únicas mutaciones de Stage 2 y requieren confirmación.
+La configuración y el historial de ServerUI se mantienen en memoria. Las acciones
+sobre servicios y paquetes requieren confirmación.
 
 ## Arquitectura
 
@@ -216,10 +242,8 @@ El terminal se restaura tras salida, error y pánico con unwinding. SIGKILL,
 panic=abort, fallo del emulador o desconexión abrupta no garantizan cleanup; si
 fuera necesario usar stty sane y reset en el shell Linux.
 
-Convenciones en AGENTS.md; plan activo en docs/STAGE_2_PLAN.md, decisiones ADR 0002–0004 y
-resultados históricos en docs/ACCEPTANCE_STAGE_1.md. Stage 2 fue autorizado el
-16 de noviembre de 2026; alcance y verificación en docs/STAGE_2_PLAN.md, ADR 0003
-y docs/ACCEPTANCE_STAGE_2.md. La publicación v0.3.0 requiere CI aprobada en PR/main.
+El [plan activo](docs/STAGE_3_PLAN.md) y el [ADR de APT](docs/adr/0005-apt-transactions.md)
+registran el alcance y las decisiones de Stage 3.
 
 El smoke exploratorio en la laptop física pasó para demo y funciones de lectura.
 El benchmark real inicial superó el umbral de CPU (3,98 % de un núcleo en 60 s).
