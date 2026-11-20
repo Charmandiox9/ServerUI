@@ -1,4 +1,4 @@
-name: Stage 4
+name: ServerUI CI
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: stage-4-${{ github.ref }}
+  group: serverui-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -44,6 +44,9 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Tests
         run: cargo test --workspace --locked
+      - name: Check RustSec advisories
+        if: runner.os == 'Linux'
+        run: cargo audit --file Cargo.lock
       - name: Portable archive and checksum regression
         run: python scripts/test_package_release.py
       - name: Disposable service fixture safety
@@ -101,6 +104,9 @@ jobs:
           --mount "type=bind,source=$GITHUB_WORKSPACE,target=/workspace,readonly"
           serverui-ssh-smoke:ci python3 /workspace/scripts/infrastructure_smoke.py
           /workspace/target/release/serverui --sandbox
+      - name: Docker and Podman lifecycle on disposable Ubuntu VM
+        if: runner.os == 'Linux'
+        run: python3 scripts/engine_vm_smoke.py target/release/serverui
       - name: Package verified release binary
         run: python scripts/package_release.py ${{ matrix.binary }} --target ${{ matrix.target }}
       - name: Save release archives and SHA-256

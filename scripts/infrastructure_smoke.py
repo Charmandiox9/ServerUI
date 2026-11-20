@@ -54,10 +54,16 @@ else:
 
 
 def demo(binary):
-    def exercise(send):
+    def exercise(send, resize):
         send(b"", "demo-web  running")
         send(b"d", "Detener (Docker)")
         send(b"n", "demo-web  running")
+        send(b"d", "Detener (Docker)")
+        resize(36, 10)
+        send(b"", "minimo 40x12")
+        send(b"y", "minimo 40x12")
+        resize(80, 24)
+        send(b"", "demo-web  running")
         send(b"d", "Detener (Docker)")
         send(b"yy", "demo-web  exited")
         send(b"\r", "logs simulados")
@@ -70,7 +76,7 @@ def demo(binary):
         send(b"m", "MiB disponibles")
 
     terminal(binary, True, exercise, ENTRY)
-    print("PASS Stage 4 demo: both engines, confirmation, logs, inventory, terminal restore")
+    print("PASS infrastructure demo: engines, visible confirmation, logs, inventory, terminal restore")
 
 
 def sandbox(binary):
@@ -102,7 +108,7 @@ def sandbox(binary):
                     executable.write(FIXTURE)
                 path.chmod(0o755)
 
-            def exercise(send):
+            def exercise(send, _resize):
                 send(b"", "docker-fixture  running")
                 send(b"\r", "docker fixture stderr")
                 send(b"", "docker fixture stdout")

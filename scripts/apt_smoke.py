@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import pty
 import select
+import signal
 import struct
 import subprocess
 import sys
@@ -19,7 +20,7 @@ FIXTURE = "serverui-apt-fixture"
 PKEXEC = Path("/usr/bin/pkexec")
 
 
-def terminal(binary, demo, exercise, entry=(b"5", "Recomendados APT")):
+def terminal(binary, demo, exercise, entry=(b"5", "Recomendados APT"), step_timeout=12):
     master, slave = pty.openpty()
     try:
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
@@ -43,17 +44,23 @@ def terminal(binary, demo, exercise, entry=(b"5", "Recomendados APT")):
         def send(keys, expected):
             if keys:
                 os.write(master, keys)
-            deadline = time.monotonic() + 12
+            deadline = time.monotonic() + step_timeout
             while time.monotonic() < deadline and child.poll() is None:
                 pump()
                 if expected in screen.text():
                     return
             raise AssertionError(f"Expected {expected!r}:\n{screen.text()}")
 
+        def resize(width, height):
+            nonlocal screen
+            fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", height, width, 0, 0))
+            screen = Screen(width=width, height=height)
+            child.send_signal(signal.SIGWINCH)
+
         try:
             send(b"", "RAM:")
             send(*entry)
-            exercise(send)
+            exercise(send, resize)
             os.write(master, b"q")
             deadline = time.monotonic() + 5
             while child.poll() is None and time.monotonic() < deadline:
@@ -72,7 +79,7 @@ def terminal(binary, demo, exercise, entry=(b"5", "Recomendados APT")):
 
 
 def demo(binary):
-    def exercise(send):
+    def exercise(send, _resize):
         send(b"", "demo-utils")
         send(b"/demo-editor\r", "Cache APT: demo-editor")
         send(b"i", "Simulacion APT.")
@@ -158,7 +165,7 @@ def sandbox(binary):
         try:
             publish_fixture(repo, source, "1")
 
-            def exercise(send):
+            def exercise(send, _resize):
                 send(f"/{FIXTURE}\r".encode(), f"> {FIXTURE}")
                 send(b"i", "Simulacion APT.")
                 send(b"n", f"> {FIXTURE}")
