@@ -114,10 +114,18 @@ pub(crate) mod native {
         )
     }
     pub(crate) fn bounded_command(
-        mut command: Command,
+        command: Command,
         timeout: Duration,
         failure_message: &str,
     ) -> Result<Vec<u8>, ProviderError> {
+        bounded_streams(command, timeout, failure_message).map(|(stdout, _)| stdout)
+    }
+
+    pub(crate) fn bounded_streams(
+        mut command: Command,
+        timeout: Duration,
+        failure_message: &str,
+    ) -> Result<(Vec<u8>, Vec<u8>), ProviderError> {
         let mut child = command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -177,7 +185,10 @@ pub(crate) mod native {
             match child.try_wait() {
                 Ok(Some(status)) if output.is_some() && errors.is_some() => {
                     break if status.success() {
-                        Ok(output.take().unwrap_or_default())
+                        Ok((
+                            output.take().unwrap_or_default(),
+                            errors.take().unwrap_or_default(),
+                        ))
                     } else {
                         Err(failure(failure_message))
                     };

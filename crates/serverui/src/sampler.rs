@@ -1,6 +1,9 @@
 use crate::action_worker::ActionWorker;
 use serverui_core::domain::{ProviderError, Sample, SystemProvider};
 use serverui_core::{
+    infrastructure::{
+        InfrastructureData, InfrastructureProvider, InfrastructureRequest, InfrastructureResult,
+    },
     packages::{PackageData, PackageProgress, PackageProvider, PackageRequest, PackageResult},
     services::{ServiceData, ServiceProvider, ServiceRequest, ServiceResult},
 };
@@ -36,16 +39,27 @@ pub trait SampleSource {
     fn package_progress(&mut self) -> Option<PackageProgress> {
         None
     }
+    fn infrastructure_request(&mut self, _: InfrastructureRequest) -> Result<bool, ProviderError> {
+        Err(ProviderError::Unavailable(
+            "Infraestructura no disponible".into(),
+        ))
+    }
+    fn infrastructure_take(&mut self) -> Option<(InfrastructureRequest, InfrastructureResult)> {
+        None
+    }
 }
 
 pub type ServiceFactory = Box<dyn FnOnce() -> Box<dyn ServiceProvider> + Send>;
 pub type PackageFactory = Box<dyn FnOnce() -> Box<dyn PackageProvider> + Send>;
+pub type InfrastructureFactory = Box<dyn FnOnce() -> Box<dyn InfrastructureProvider> + Send>;
 
 pub struct Sampler {
     pub service_factory: Option<ServiceFactory>,
     services: Option<ActionWorker<ServiceRequest, ServiceData>>,
     pub package_factory: Option<PackageFactory>,
     packages: Option<ActionWorker<PackageRequest, PackageData>>,
+    pub infrastructure_factory: Option<InfrastructureFactory>,
+    infrastructure: Option<ActionWorker<InfrastructureRequest, InfrastructureData>>,
     progress: Option<Receiver<PackageProgress>>,
     requests: SyncSender<()>,
     results: Receiver<Sample>,
@@ -103,6 +117,8 @@ impl Sampler {
             service_factory: None,
             package_factory: None,
             packages: None,
+            infrastructure_factory: None,
+            infrastructure: None,
             progress: None,
             requests,
             results,
@@ -162,6 +178,31 @@ impl SampleSource for Sampler {
     }
     fn package_progress(&mut self) -> Option<PackageProgress> {
         self.progress.as_ref()?.try_recv().ok()
+    }
+    fn infrastructure_request(
+        &mut self,
+        request: InfrastructureRequest,
+    ) -> Result<bool, ProviderError> {
+        let unavailable =
+            || ProviderError::Unavailable("Worker de infraestructura no disponible".into());
+        if self.infrastructure.is_none()
+            && let Some(factory) = self.infrastructure_factory.take()
+        {
+            self.infrastructure = Some(
+                ActionWorker::spawn("Worker de infraestructura", move || {
+                    let mut provider = factory();
+                    Box::new(move |request| provider.perform(request))
+                })
+                .map_err(|_| unavailable())?,
+            );
+        }
+        self.infrastructure
+            .as_mut()
+            .ok_or_else(unavailable)?
+            .request(request)
+    }
+    fn infrastructure_take(&mut self) -> Option<(InfrastructureRequest, InfrastructureResult)> {
+        self.infrastructure.as_mut()?.take()
     }
     fn request(&mut self) -> Result<bool, ProviderError> {
         if self.pending {
