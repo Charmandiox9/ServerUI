@@ -1,7 +1,7 @@
-# Instalar ServerUI v0.4.0 en Ubuntu Server
+# Instalar ServerUI v0.5.0 en Ubuntu Server
 
-La release v0.4.0 incluye Stage 3 y el módulo de paquetes APT para Ubuntu 22.04 x86_64, con baseline glibc
-2.35. v0.3.0 incorpora Servicios, v0.2.0 incluye Dashboard/procesos de lectura y v0.1.0 solamente demo. No se requiere
+La release v0.5.0 incluye Stage 4 con Contenedores, Red y discos para Ubuntu 22.04
+x86_64, con baseline glibc 2.35. v0.4.0 incorpora el módulo APT. v0.3.0 incorpora Servicios, v0.2.0 incluye Dashboard/procesos de lectura y v0.1.0 solamente demo. No se requiere
 actualizar Ubuntu, instalar Rust ni ejecutar ServerUI como root para usarlo.
 
 Antes de transferir, comprobar en el servidor:
@@ -16,8 +16,8 @@ Descargar el par de archivos de la release en el servidor:
 
 ```sh
 cd ~
-release_url='https://github.com/Charmandiox9/ServerUI/releases/download/v0.4.0'
-archive='serverui-v0.4.0-x86_64-unknown-linux-gnu.tar.gz'
+release_url='https://github.com/Charmandiox9/ServerUI/releases/download/v0.5.0'
+archive='serverui-v0.5.0-x86_64-unknown-linux-gnu.tar.gz'
 curl -fLO "$release_url/$archive"
 curl -fLO "$release_url/$archive.sha256"
 ```
@@ -26,19 +26,19 @@ Como alternativa, desde PowerShell en la carpeta del proyecto, copiar el paquete
 local ya verificado, reemplazando USUARIO e IP:
 
 ```powershell
-scp .\target\release-assets\serverui-v0.4.0-x86_64-unknown-linux-gnu.tar.gz USUARIO@IP:~/
-scp .\target\release-assets\serverui-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256 USUARIO@IP:~/
+scp .\target\release-assets\serverui-v0.5.0-x86_64-unknown-linux-gnu.tar.gz USUARIO@IP:~/
+scp .\target\release-assets\serverui-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256 USUARIO@IP:~/
 ```
 
 En la sesión Ubuntu:
 
 ```sh
 cd ~
-sha256sum -c serverui-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &&
-mkdir -p ~/serverui-test-v0.4.0 &&
-tar -xzf serverui-v0.4.0-x86_64-unknown-linux-gnu.tar.gz -C ~/serverui-test-v0.4.0 &&
+sha256sum -c serverui-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &&
+mkdir -p ~/serverui-test-v0.5.0 &&
+tar -xzf serverui-v0.5.0-x86_64-unknown-linux-gnu.tar.gz -C ~/serverui-test-v0.5.0 &&
 mkdir -p ~/.local/bin &&
-install -m 755 ~/serverui-test-v0.4.0/serverui ~/.local/bin/serverui
+install -m 755 ~/serverui-test-v0.5.0/serverui ~/.local/bin/serverui
 ```
 
 Continuar solo si el checksum dice OK. Probar primero versión/demo y después
@@ -63,6 +63,10 @@ SSH. Un timeout no garantiza cancelar un job aceptado por systemd; comprobar
 estado antes de reintentar. Las pruebas desechables están en docs/SERVICE_ACCEPTANCE_SSH.md.
 
 Paquetes (5) muestra los recomendados disponibles y permite buscar con `/`. Instalar, actualizar o eliminar requiere revisar la simulación, confirmar y obtener autorización mediante polkit. Consulta [Paquetes APT](../README.md#paquetes-apt-en-ubuntu-stage-3) para el flujo por SSH.
+
+Contenedores (6) usa Docker o Podman locales con los permisos existentes.
+Red y discos (7) muestra el inventario de solo lectura. Consulta el
+[recorrido de Stage 4](../README.md#contenedores-red-y-discos-stage-4).
 
 ## Diagnóstico de formato y compatibilidad
 
