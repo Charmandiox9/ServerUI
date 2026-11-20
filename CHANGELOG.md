@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.4.0 — 2026-11-19
+
+- Pestaña Paquetes con búsqueda local por nombre, instalación, actualización de
+  un paquete instalado y eliminación con simulación y confirmación.
+- Selección de paquetes recomendados al abrir Paquetes, filtrada por el índice local.
+- Worker APT independiente con progreso, diagnóstico acotado y autorización
+  puntual mediante polkit. Demo determinista en Linux y Windows.
+- Propuesta de deshacer una instalación nueva de un solo paquete mediante
+  una simulación de eliminación independiente.
+- Pruebas PTY y fixture Ubuntu desechable con una fuente APT local.
+
 ## v0.3.0 — 2026-11-16
 
 - Stage 1 cerrado: PR #2 integrado, CI Linux/Windows aprobada y v0.2.0 publicada.

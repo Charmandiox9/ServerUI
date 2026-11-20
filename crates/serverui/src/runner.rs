@@ -91,6 +91,12 @@ fn run_loop(
         if let Some((request, reply)) = source.service_take() {
             app.services.receive(request, reply);
         }
+        if let Some(progress) = source.package_progress() {
+            app.packages.progress = Some(progress);
+        }
+        if let Some(reply) = source.package_take() {
+            app.packages.receive(reply);
+        }
         if let Some(reply) = source.take() {
             app.receive(reply);
         }
@@ -123,6 +129,11 @@ fn apply(app: &mut App, action: Action, source: &mut impl SampleSource) -> bool 
             }
             Ok(false) => {}
             Err(error) => app.services.receive(request, Err(error)),
+        },
+        Some(Effect::Package(request)) => match source.package_request(request.clone()) {
+            Ok(true) => app.packages.started(request),
+            Ok(false) => {}
+            Err(error) => app.packages.receive(Err(error)),
         },
         None => {}
     }

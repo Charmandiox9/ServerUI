@@ -1,6 +1,6 @@
+mod action_worker;
 mod runner;
 mod sampler;
-mod service_worker;
 
 use std::{
     io::{self, IsTerminal},
@@ -24,7 +24,7 @@ enum DemoScenario {
 #[derive(Debug, Parser)]
 #[command(
     version,
-    about = "ServerUI: metricas, procesos y servicios systemd. Acciones con confirmacion. --demo: simulacion."
+    about = "ServerUI: metricas, procesos, servicios systemd y paquetes APT. --demo: simulacion."
 )]
 struct Args {
     /// Usar datos simulados sin consultar ni modificar el host
@@ -85,6 +85,7 @@ fn start(args: Args) -> io::Result<()> {
     terminal::install_panic_hook();
     let mut source = sampler::Sampler::spawn(move || make_provider(args.demo, scenario))?;
     source.service_factory = Some(Box::new(move || make_services(args.demo, scenario)));
+    source.package_factory = Some(Box::new(move || make_packages(args.demo, scenario)));
     terminal::run(|terminal| {
         runner::run(
             &mut source,
@@ -99,6 +100,23 @@ fn start(args: Args) -> io::Result<()> {
         )
         .map(|_| ())
     })
+}
+
+fn make_packages(
+    demo: bool,
+    scenario: Scenario,
+) -> Box<dyn serverui_core::packages::PackageProvider> {
+    if demo {
+        return Box::new(serverui_providers::MockPackages::new(scenario));
+    }
+    #[cfg(target_os = "linux")]
+    {
+        Box::new(serverui_providers::LinuxPackages)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        Box::new(serverui_providers::MockPackages::new(Scenario::Empty))
+    }
 }
 
 fn make_provider(

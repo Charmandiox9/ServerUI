@@ -1,7 +1,11 @@
 //! Metrics and service adapters. Demo never initializes real Linux providers.
 mod mock;
+mod packages;
 mod services;
 pub use mock::{MockProvider, Scenario};
+#[cfg(target_os = "linux")]
+pub use packages::LinuxPackages;
+pub use packages::MockPackages;
 #[cfg(target_os = "linux")]
 pub use services::LinuxServices;
 pub use services::MockServices;

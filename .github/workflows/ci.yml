@@ -1,4 +1,4 @@
-name: Stage 2
+name: Stage 3
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: stage-2-${{ github.ref }}
+  group: stage-3-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -62,6 +62,9 @@ jobs:
       - name: Stage 2 demo services and confirmations
         if: runner.os == 'Linux'
         run: python3 scripts/service_smoke.py target/release/serverui
+      - name: APT demo and confirmations
+        if: runner.os == 'Linux'
+        run: python3 scripts/apt_smoke.py target/release/serverui
       - name: Idle CPU and response regression
         if: runner.os == 'Linux'
         run: python3 scripts/benchmark_demo.py target/release/serverui --seconds 15
@@ -77,6 +80,16 @@ jobs:
           --security-opt no-new-privileges
           --mount "type=bind,source=$GITHUB_WORKSPACE,target=/workspace,readonly"
           serverui-ssh-smoke:ci python3 /workspace/scripts/ssh_smoke.py /workspace/target/release/serverui
+      - name: APT transactions in disposable Ubuntu
+        if: runner.os == 'Linux'
+        run: >-
+          docker run --rm --network none --cap-drop ALL
+          --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER
+          --cap-add SETUID --cap-add SETGID --security-opt no-new-privileges
+          --env SERVERUI_APT_SANDBOX=disposable
+          --mount "type=bind,source=$GITHUB_WORKSPACE,target=/workspace,readonly"
+          serverui-ssh-smoke:ci python3 /workspace/scripts/apt_smoke.py
+          /workspace/target/release/serverui --sandbox
       - name: Package verified release binary
         run: python scripts/package_release.py ${{ matrix.binary }} --target ${{ matrix.target }}
       - name: Save release archives and SHA-256
