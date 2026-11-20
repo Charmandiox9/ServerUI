@@ -2,7 +2,7 @@
 
 El usuario autorizó Stage 5. El Project Charter v1.0 define como entregables
 estabilización, documentación y publicación con revisión de seguridad,
-compatibilidad y pruebas. La versión de trabajo es v1.0.0-dev.
+compatibilidad y pruebas. La versión de publicación es v1.0.0.
 
 ## Alcance
 

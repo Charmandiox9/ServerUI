@@ -1,6 +1,6 @@
 # Changelog
 
-## En desarrollo para v1.0.0
+## v1.0.0 — 2026-11-20
 
 - Cancelar diálogos de confirmación cuando el tamaño del terminal impide
   mostrarlos. Verificar el tamaño real antes de enviar una acción.

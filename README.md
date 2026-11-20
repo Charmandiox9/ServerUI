@@ -4,7 +4,7 @@ Administra Ubuntu Server desde una terminal local o por SSH. Consulta métricas,
 procesos, red y discos, y opera servicios, paquetes APT y contenedores con
 confirmación explícita.
 
-[Descargar v0.5.0](https://github.com/Charmandiox9/ServerUI/releases/tag/v0.5.0) ·
+[Descargar v1.0.0](https://github.com/Charmandiox9/ServerUI/releases/tag/v1.0.0) ·
 [Instalar en Ubuntu y verificar SHA-256](docs/INSTALL_UBUNTU.md)
 
 ## Inicio rápido
@@ -35,7 +35,7 @@ moverte, `?` para ayuda y `q` o `Ctrl+C` para salir.
 
 `r` actualiza o reintenta. Revisa la unidad, el plan APT o el ID del
 contenedor y pulsa `y` para confirmar o `n/Esc` para cancelar. La confirmación
-requiere un terminal de al menos **40×12** en la versión en desarrollo.
+requiere un terminal de al menos **40×12**.
 Durante una operación APT, ServerUI espera el resultado antes de salir.
 
 ## Permisos en Linux
