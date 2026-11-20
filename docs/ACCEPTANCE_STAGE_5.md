@@ -34,8 +34,7 @@ desechable. [CI del PR](https://github.com/Charmandiox9/ServerUI/actions/runs/44
 
 La evidencia previa de servicios usa el gestor de usuario por SSH con la
 excepción autorizada en Stage 2. La de APT usa apt/dpkg reales en sandbox y
-autorización simulada. La prueba del gestor systemd del sistema requiere un
-entorno aislado con permisos preparados.
+autorización simulada.
 [Aceptación de servicios](ACCEPTANCE_STAGE_2.md) ·
 [Aceptación de APT](ACCEPTANCE_STAGE_3.md) ·
 [Aceptación de contenedores](ACCEPTANCE_STAGE_4.md).
@@ -51,8 +50,19 @@ y autorización simulada.
 Con el binario corregido, ServerUI completó la retirada por SSH. APT informó
 un solo paquete eliminado, `hello`, y cero instalaciones o actualizaciones.
 Una consulta independiente con `dpkg-query -W hello` confirmó que el paquete
-volvió a quedar ausente. La cancelación real de polkit sigue pendiente de
-verificación.
+volvió a quedar ausente.
+
+También se probó el binario corregido por SSH en una VM desechable de Ubuntu
+22.04.5 con systemd como PID 1. Cada instancia de ServerUI corrió como usuario
+normal. En el gestor del sistema, el reinicio de una unidad de prueba fue
+rechazado para la cuenta sin autorización y conservó su `InvocationID`.
+Para una segunda cuenta con permiso de gestión de unidades preparado en la
+VM, el reinicio cambió su `InvocationID` y la unidad siguió activa.
+
+Para APT, `pkttyagent` mostró una solicitud real de autenticación. Al
+cancelarla en el agente, ServerUI informó que la autorización fue cancelada o
+no concedida y `dpkg-query` verificó que el paquete de prueba seguía ausente.
+Los fixtures y la política de prueba pertenecían al disco temporal de la VM.
 
 ## Evidencia local de v1.0.0-dev
 
