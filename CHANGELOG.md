@@ -1,5 +1,13 @@
 # Changelog
 
+## En desarrollo para v1.0.0
+
+- Cancelar diálogos de confirmación cuando el tamaño del terminal impide
+  mostrarlos. Verificar el tamaño real antes de enviar una acción.
+- Añadir una regresión PTY de redimensionamiento durante una confirmación,
+  una prueba de Docker y Podman en una VM desechable y auditoría RustSec en CI.
+- Documentar compatibilidad, límites de permisos y criterios de publicación.
+
 ## v0.5.0 — 2026-11-20
 
 - Contenedores Docker y Podman locales con lista, logs, inicio, detención y

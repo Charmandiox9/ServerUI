@@ -1,7 +1,7 @@
 # ServerUI
 
 Administración visual de Ubuntu Server desde la terminal, construida en Rust.
-**Stage 4 / v0.5.0 con contenedores, red y discos.**
+**Stage 5 de estabilización para v1.0.0.**
 Dashboard y procesos ofrecen consultas de solo lectura. Servicios, Paquetes y Contenedores
 ofrecen acciones con confirmación explícita. Ejecuta la TUI como usuario normal.
 
@@ -77,6 +77,8 @@ no se ofrecen acciones basadas en esa identidad.
 La ayuda captura navegación pero permite refrescos y salida. Ajustes muestra opciones de esta ejecución,
 sin editor persistente. Se admiten 80×24, modo compacto 40×12 y aviso en tamaños
 menores sin perder salida por teclado. No se requieren ratón, truecolor ni iconos.
+Si el terminal se reduce por debajo de 40×12, la confirmación administrativa
+se cancela. Amplía el terminal y vuelve a proponer la operación.
 
 ## Servicios, logs y acciones rápidas (Stage 2)
 
@@ -260,9 +262,9 @@ El terminal se restaura tras salida, error y pánico con unwinding. SIGKILL,
 panic=abort, fallo del emulador o desconexión abrupta no garantizan cleanup; si
 fuera necesario usar stty sane y reset en el shell Linux.
 
-El [plan activo](docs/STAGE_4_PLAN.md) y el
-[ADR de contenedores e inventario](docs/adr/0006-local-infrastructure.md)
-registran el alcance y las decisiones de Stage 4.
+El [plan activo](docs/STAGE_5_PLAN.md) y la
+[lista de aceptación](docs/ACCEPTANCE_STAGE_5.md) documentan el alcance de la
+estabilización, la compatibilidad y la evidencia para v1.0.0.
 
 El smoke exploratorio en la laptop física pasó para demo y funciones de lectura.
 El benchmark real inicial superó el umbral de CPU (3,98 % de un núcleo en 60 s).
