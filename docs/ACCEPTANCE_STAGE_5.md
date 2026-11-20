@@ -26,8 +26,10 @@ Ubuntu 22.04 hospedado por GitHub. Crea un contenedor exclusivo y etiquetado
 por motor a partir de una imagen fijada por digest. Comprueba desde la TUI
 cancelar, iniciar, leer stdout y stderr, reiniciar y detener. Contrasta
 estado y hora de inicio mediante el cliente real y retira solo sus fixtures.
-Esta prueba está pendiente de ejecución en CI. El runner es una VM
-desechable. [Servicios del runner](https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2204-Readme.md) ·
+Ambos motores pasaron el recorrido y se confirmó la limpieza en el PR #6,
+tras corregir el formato de listado de Podman 3.4. El runner es una VM
+desechable. [CI del PR](https://github.com/Charmandiox9/ServerUI/actions/runs/44668156065) ·
+[Servicios del runner](https://github.com/actions/runner-images/blob/main/images/ubuntu/Ubuntu2204-Readme.md) ·
 [Aislamiento de los runners hospedados](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 
 La evidencia previa de servicios usa el gestor de usuario por SSH con la
@@ -55,11 +57,13 @@ polkit real por SSH requieren un entorno aislado con permisos preparados.
   obtuvo 0,20 % de un núcleo, 3 629 056 bytes de RSS máximo y 0,383 ms para
   abrir la ayuda.
 - El 20 de noviembre de 2026, la consulta por nombre y versión a OSV no
-  devolvió avisos para los 112 paquetes de registro de Cargo.lock. Falta
-  ejecutar también `cargo audit` en CI. [Consulta de OSV](https://google.github.io/osv.dev/post-v1-querybatch/).
+  devolvió avisos para los 112 paquetes de registro de Cargo.lock. La auditoría
+  RustSec también pasó en el PR #6 sobre las 116 entradas del lockfile,
+  incluidos los cuatro crates del workspace. [Consulta de OSV](https://google.github.io/osv.dev/post-v1-querybatch/) ·
+  [Auditoría en CI](https://github.com/Charmandiox9/ServerUI/actions/runs/44668156065/job/136062445740).
 
 ## Publicación
 
-Los resultados de CI y de los binarios de publicación se registran al cerrar
-el PR. La licencia open source queda sujeta a la decisión del propietario.
+Los resultados de CI en main y de los binarios de publicación se registran
+al cerrar el PR. La licencia open source queda sujeta a la decisión del propietario.
 Los límites de autorización probados deben constar en las notas de release.

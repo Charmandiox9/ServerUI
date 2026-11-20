@@ -62,11 +62,11 @@ TUI. Revisar unidad e impacto antes de confirmar: puede afectar dependencias y
 SSH. Un timeout no garantiza cancelar un job aceptado por systemd; comprobar
 estado antes de reintentar. Las pruebas desechables están en docs/SERVICE_ACCEPTANCE_SSH.md.
 
-Paquetes (5) muestra los recomendados disponibles y permite buscar con `/`. Instalar, actualizar o eliminar requiere revisar la simulación, confirmar y obtener autorización mediante polkit. Consulta [Paquetes APT](../README.md#paquetes-apt-en-ubuntu-stage-3) para el flujo por SSH.
+Paquetes (5) muestra los recomendados disponibles y permite buscar con `/`. Instalar, actualizar o eliminar requiere revisar la simulación, confirmar y obtener autorización mediante polkit. Consulta [Paquetes APT](../README.md#permisos-en-linux) para el flujo por SSH.
 
 Contenedores (6) usa Docker o Podman locales con los permisos existentes.
 Red y discos (7) muestra el inventario de solo lectura. Consulta el
-[recorrido de Stage 4](../README.md#contenedores-red-y-discos-stage-4).
+[recorrido de Stage 4](../README.md#controles).
 
 ## Diagnóstico de formato y compatibilidad
 
